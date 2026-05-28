@@ -1,0 +1,14 @@
+# Python 3.11+
+# Crear ambiente virtual:
+# Linux/macOS: python3.11 -m venv venv && source venv/bin/activate
+# Windows: py -3.11 -m venv venv && venv\Scripts\activate
+Flask>=2.0.3,<2.3
+# Cliente Turso/libSQL (API estilo sqlite3, soporta réplica embebida)
+libsql>=0.1.0
+# Carga de configuración desde .env
+python-dotenv>=1.0.0
+pytz>=2022.7
+openpyxl>=3.0.10,<4.0
+Werkzeug>=2.0.3,<3.0
+reportlab>=3.6.11
+Pillow>=9.0.1

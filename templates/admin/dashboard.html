@@ -1,0 +1,52 @@
+{% extends "base_admin.html" %}
+{% block title %}Dashboard · MMQEP{% endblock %}
+{% block page_heading %}Resumen institucional{% endblock %}
+{% block body %}
+
+<div class="grid-stats">
+  {% for row in estado_counts %}
+  <div class="stat-card">
+    <span class="stat-label">{{ row.estado }}</span>
+    <span class="stat-val">{{ row.c }}</span>
+  </div>
+  {% else %}
+  <p class="muted">Sin denuncias con los filtros actuales de su cuenta.</p>
+  {% endfor %}
+</div>
+
+<div class="card table-card spacing-top">
+  <h2 class="card-title">Últimos expedientes</h2>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Código</th>
+          <th>Categoría</th>
+          <th>Prioridad</th>
+          <th>Estado</th>
+          <th>Ingreso</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in recientes %}
+        <tr>
+          <td><code>{{ r.codigo }}</code></td>
+          <td>{{ r.subcategoria or r.categoria }}</td>
+          <td><span class="badge badge-prio">{{ r.prioridad }}</span></td>
+          <td>{{ r.estado }}</td>
+          <td>{{ r.fecha_creacion }}</td>
+          <td><a class="btn btn-small btn-primary" href="{{ url_for('admin_denuncias.admin_detalle', did=r.id) }}">Ver</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="muted">No hay registros recientes.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="form-actions">
+    <a class="btn btn-primary" href="{{ url_for('admin_denuncias.admin_lista_denuncias') }}">Ir a bandeja completa</a>
+    <a class="btn btn-outline" href="{{ url_for('admin_denuncias.admin_reportes') }}">Reportes</a>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,116 @@
+{% extends "base_public.html" %}
+{% block title %}Registrar denuncia · MMQEP{% endblock %}
+{% block body %}
+<main class="wrap section">
+  <h1 class="page-title">Registro de denuncias</h1>
+  <p class="lead form-intro-lead">Complete este formulario para reportar irregularidades de <strong>especulación</strong>, <strong>movilidad</strong>, <strong>operaciones</strong> u otros hechos. Los campos marcados con <span class="req">*</span> son obligatorios. Al finalizar obtendrá un <strong>código de denuncia</strong> para el seguimiento de su caso.</p>
+
+  <form class="card form-card form-card-public" method="post" action="{{ url_for('public_denuncias.registrar') }}" enctype="multipart/form-data" id="form-denuncia">
+    <h2 class="card-title">Datos del caso</h2>
+
+    <fieldset class="card-inner form-section">
+      <legend>¿Desea registrar de forma anónima?</legend>
+      <label class="check-label"><input type="checkbox" id="anon" name="es_anonima" value="1"> Sí, registro <strong>anónimo</strong></label>
+      <p class="hint">Si marca anónimo, no debe completar datos personales. El seguimiento del caso se hace <strong>solo con el código</strong> en esta plataforma; <strong>no se enviará aviso por correo</strong> porque no registramos un correo de contacto.</p>
+      <p class="hint hint-tight">Si <strong>no</strong> es anónimo, deberá indicar nombre completo, identificación, teléfono y correo (obligatorios).</p>
+    </fieldset>
+
+    <fieldset id="datos-ident" class="card-inner form-section">
+      <legend>Denunciante <span class="req">*</span> <span class="legend-note">(obligatorio si no es anónimo)</span></legend>
+      <div class="form-row cols-2">
+        <label>Nombres y apellidos <span class="req">*</span>
+          <input type="text" name="nombres" maxlength="200" autocomplete="name">
+        </label>
+        <label>Cédula o RUC <span class="req">*</span>
+          <input type="text" name="identificacion" maxlength="40" autocomplete="off">
+        </label>
+      </div>
+      <div class="form-row cols-2">
+        <label>Teléfono <span class="req">*</span>
+          <input type="tel" name="telefono" maxlength="40" autocomplete="tel">
+        </label>
+        <label>Correo electrónico <span class="req">*</span>
+          <input type="email" name="correo" maxlength="160" autocomplete="email">
+        </label>
+      </div>
+    </fieldset>
+
+    {% if catalogo_cats %}
+    <script type="application/json" id="mmq-catalogo-portal">{{ catalogo_cats|tojson }}</script>
+    {% endif %}
+    <div class="form-section">
+      <p class="form-section-kicker">Clasificación del caso</p>
+      <div class="form-row cols-2">
+        <label>Categoría principal <span class="req">*</span>
+          <select name="categoria_id" id="categoria" required>
+            <option value="">— Elija categoría —</option>
+            {% for c in catalogo_cats or [] %}<option value="{{ c.id }}">{{ c.nombre }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>Subcategoría <span class="req">*</span>
+          <select name="subcategoria_id" id="subcategoria" required disabled>
+            <option value="">— Primero elija categoría —</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <p class="form-section-kicker">Ubicación del hecho</p>
+      <label>Lugar / ubicación dentro del mercado
+        <input type="text" name="ubicacion" maxlength="300" placeholder="Ej.: nave, puesto, zona…">
+      </label>
+    </div>
+
+    <fieldset class="form-section form-datetime-fieldset">
+      <legend>Fecha y hora del hecho</legend>
+      <div class="form-datetime-grid">
+        <div class="form-datetime-box">
+          <label class="form-datetime-label">Fecha aproximada <span class="req">*</span>
+            <input type="date" name="fecha_hecho" id="fecha_hecho" value="{{ fecha_hoy }}" required>
+          </label>
+        </div>
+        <div class="form-datetime-box">
+          <label class="form-datetime-label">Hora aproximada <span class="optional-tag">opcional</span>
+            <input type="time" name="hora_hecho" id="hora_hecho">
+          </label>
+        </div>
+      </div>
+    </fieldset>
+
+    <div class="form-section">
+      <p class="form-section-kicker">Detalle</p>
+      <label>Persona, local, puesto o área involucrada (si se conoce)
+        <input type="text" name="involucrado" maxlength="300" placeholder="Opcional">
+      </label>
+    </div>
+
+    <div class="form-section">
+      <label>Descripción detallada <span class="req">*</span>
+        <textarea name="descripcion" rows="6" required minlength="30" maxlength="12000" placeholder="Describa los hechos con el mayor nivel de detalle posible (mínimo 30 caracteres)."></textarea>
+      </label>
+    </div>
+
+    <div class="form-section">
+      <label>Evidencias (imagen PNG/JPG/JPEG o PDF, máximo 5&nbsp;MB por archivo)
+        <input type="file" name="evidencias" accept=".png,.jpg,.jpeg,.pdf,image/png,image/jpeg,application/pdf" multiple>
+      </label>
+    </div>
+
+    <fieldset class="legal-box form-section">
+      <legend>Declaraciones</legend>
+      <label class="check-label"><input type="checkbox" name="acepto_veracidad" value="1" required> Declaro que la información es veraz a mi leal saber y entender.</label>
+      <label class="check-label"><input type="checkbox" name="acepto_datos" value="1" required> Acepto el tratamiento de datos personales en el marco de la Ley Orgánica de Protección de Datos Personales y normativa relacionada.</label>
+    </fieldset>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary btn-large" id="btn-enviar-registro" disabled title="Complete todos los campos obligatorios y acepte las declaraciones">Enviar registro</button>
+      <a class="btn btn-ghost" href="{{ url_for('public_denuncias.consulta') }}">Ya tengo código</a>
+    </div>
+  </form>
+</main>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function(){ if (typeof window.MMQ_denunciasInit === 'function') window.MMQ_denunciasInit(); });
+</script>
+{% endblock %}

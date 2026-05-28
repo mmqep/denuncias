@@ -1,0 +1,412 @@
+{% extends "base_admin.html" %}
+{% block title %}Categorías MMQEP{% endblock %}
+{% block page_heading %}Categorías y subcategorías{% endblock %}
+{% block body %}
+
+<p class="hint cat-page-intro">El ciudadano elige <strong>categoría</strong> y <strong>subcategoría</strong>. El <strong>área sugerida</strong> permite asignar automáticamente si hay Responsable en esa área.</p>
+
+<div class="cat-toolbar card">
+  <div class="cat-toolbar-head">
+    <h2 class="cat-toolbar-title">Nueva categoría</h2>
+    <p class="lead-small cat-toolbar-lead">Aparecerá en el formulario público cuando esté activa.</p>
+  </div>
+  <form class="cat-new-inline" method="post" action="{{ url_for('admin_denuncias.admin_cat_crear') }}">
+    <label class="cat-new-label">Nombre
+      <input type="text" name="nombre" required maxlength="220" placeholder="Ej.: Denuncias sanitarias…" class="cat-new-input">
+    </label>
+    <button type="submit" class="btn btn-primary">Crear categoría</button>
+  </form>
+</div>
+
+<script type="application/json" id="mmq-areas-json">{{ areas_ls|tojson }}</script>
+<span id="mmq-url-tpl" style="display:none"
+  data-crear="{{ url_for('admin_denuncias.admin_subcat_crear', cid=982734651) }}"
+  data-editar="{{ url_for('admin_denuncias.admin_subcat_actualizar', sid=982734651) }}"
+  data-eliminar="{{ url_for('admin_denuncias.admin_subcat_eliminar', sid=982734651) }}"
+  data-catelim="{{ url_for('admin_denuncias.admin_cat_eliminar', cid=982734651) }}"
+></span>
+
+{% if categorias %}
+<div class="spacing-top cat-list-header">
+  <h2 class="cat-list-heading">Lista de categorías</h2>
+  <span class="muted cat-list-count">{{ categorias|length }} ítem(es) — despliegue una fila para administrar subcategorías</span>
+</div>
+
+<div class="cat-accordion-root spacing-top-mini js-cat-acc-root">
+{% for c in categorias %}
+  {% set subs = subs_por_cat.get(c.id, []) %}
+  <details class="cat-acc-item js-cat-acc-item">
+    <summary class="cat-acc-summary">
+      <span class="cat-acc-chevron" aria-hidden="true"></span>
+      <span class="cat-acc-name">{{ c.nombre }}</span>
+      <span class="cat-acc-meta">
+        <span class="badge badge-cat-count">{% if subs|length == 1 %}1 subcategoría{% else %}{{ subs|length }} subcategorías{% endif %}</span>
+        {% if c.activo %}
+        <span class="badge badge-cat-live">En portal</span>
+        {% else %}
+        <span class="badge badge-cat-muted">Oculta</span>
+        {% endif %}
+        <span class="muted cat-acc-id">#{{ c.id }}</span>
+      </span>
+    </summary>
+
+    <div class="cat-acc-panel">
+      <div class="cat-inline-bar">
+        <form method="post" action="{{ url_for('admin_denuncias.admin_cat_actualizar', cid=c.id) }}" class="cat-inline-form cat-inline-form--grow">
+          <span class="cat-inline-label">Categoría</span>
+          <label class="cat-inline-field">Nombre<input type="text" name="nombre" value="{{ c.nombre }}" required maxlength="220"></label>
+          <label class="cat-inline-field cat-inline-orden">Orden<input type="number" name="orden" value="{{ c.orden }}" min="0"></label>
+          <button type="submit" class="btn btn-accent btn-small">Guardar</button>
+          {% set ncat = (c.denuncias_cnt | default(0))|int %}
+          {% if ncat == 0 %}
+          <button type="button" class="btn btn-outline btn-small btn-danger-soft js-mmq-cat-del" data-cid="{{ c.id }}" data-nombre="{{ c.nombre|e }}">Eliminar categoría</button>
+          {% else %}
+          <span class="muted cat-inline-blocked-hint" title="Existen expedientes con esta categoría o sus subrubros">Sin eliminar ({{ ncat }} exp.)</span>
+          {% endif %}
+        </form>
+        <form method="post" action="{{ url_for('admin_denuncias.admin_cat_alternar', cid=c.id) }}" class="cat-vis-form" title="{{ 'Ocultar categoría del portal' if c.activo else 'Mostrar categoría en el portal' }}">
+          <button type="submit" class="btn-icon-tile {% if not c.activo %}btn-icon-tile--off{% endif %}" aria-label="{{ 'Ocultar del portal ciudadano' if c.activo else 'Activar visibilidad en portal' }}">
+            {% if c.activo %}
+            <svg class="ico-svg" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6m0-2a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0-4c5 0 9.27 3.11 11 7-1.73 3.89-6 7-11 7S1.73 15.89 0 12c1.73-3.89 6-7 11-7"/></svg>
+            {% else %}
+            <svg class="ico-svg" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.79-2.74 3.77-4.53-1.82-3.07-5.09-5.22-9.33-5.22-1.28 0-2.51.21-3.65.59l2.18 2.18C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.42-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>
+            {% endif %}
+          </button>
+          <span class="cat-vis-hint muted">{{ 'Visible' if c.activo else 'Oculta' }}</span>
+        </form>
+      </div>
+
+      <div class="subcat-table-wrap">
+        <div class="subcat-table-head">
+          <h3 class="cat-sub-heading">Subcategorías</h3>
+          <button type="button" class="btn btn-primary btn-small js-mmq-sub-add" data-categoria-id="{{ c.id }}" title="Nueva subcategoría">
+            <span class="mmq-plus">+</span> Nueva
+          </button>
+        </div>
+
+        {% if subs %}
+        <div class="table-wrap scroll-x">
+          <table class="data-table striped small cat-sub-table">
+            <thead>
+              <tr>
+                <th class="th-n">N.º</th>
+                <th>Orden</th>
+                <th>Nombre de la subcategoría</th>
+                <th>Área sugerida</th>
+                <th>En portal</th>
+                <th class="th-actions">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for s in subs %}
+              <tr class="{% if not s.activo %}row-muted{% endif %}">
+                <td class="td-n">{{ loop.index }}</td>
+                <td>{{ s.orden }}</td>
+                <td class="wrap-cell td-name">{{ s.nombre }}</td>
+                <td class="wrap-cell">{{ s.area_pri_nombre or '—' }}</td>
+                <td>
+                  <form method="post" action="{{ url_for('admin_denuncias.admin_subcat_alternar', sid=s.id) }}" class="inline-form">
+                    <button type="submit" class="btn-icon-tiny {% if s.activo %}btn-icon-tiny--on{% else %}btn-icon-tiny--off{% endif %}" title="{{ 'Ocultar subcategoría del portal' if s.activo else 'Mostrar en portal' }}" aria-label="Cambiar visibilidad en portal">
+                      {% if s.activo %}
+                      <svg class="ico-svg ico-svg--sm" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6m0-2a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0-4c5 0 9.27 3.11 11 7-1.73 3.89-6 7-11 7S1.73 15.89 0 12c1.73-3.89 6-7 11-7"/></svg>
+                      {% else %}
+                      <svg class="ico-svg ico-svg--sm" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.79-2.74 3.77-4.53-1.82-3.07-5.09-5.22-9.33-5.22-1.28 0-2.51.21-3.65.59l2.18 2.18C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.42-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>
+                      {% endif %}
+                    </button>
+                  </form>
+                </td>
+                <td class="td-actions-cell">
+                  <div class="row-actions">
+                    <button type="button" class="btn btn-outline btn-mini js-mmq-sub-edit"
+                      data-sid="{{ s.id }}"
+                      data-cid="{{ c.id }}"
+                      data-nombre="{{ s.nombre|e }}"
+                      data-orden="{{ s.orden }}"
+                      data-area="{{ s.area_id_principal or '' }}">Editar</button>
+                    {% set ns = (s.denuncias_cnt | default(0))|int %}
+                    {% if ns == 0 %}
+                    <button type="button" class="btn btn-outline btn-mini btn-danger-soft js-mmq-sub-del"
+                      data-sid="{{ s.id }}"
+                      data-cid="{{ c.id }}"
+                      data-nombre="{{ s.nombre|e }}">Eliminar</button>
+                    {% else %}
+                    <span class="muted table-hint nowrap-hint">Sin eliminar ({{ ns }})</span>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="muted cat-sub-empty">Sin subcategorías. Pulse <strong>+ Nueva</strong> para agregar la primera.</p>
+        {% endif %}
+      </div>
+    </div>
+  </details>
+{% endfor %}
+</div>
+{% else %}
+<p class="muted spacing-top">No hay categorías. Cree la primera con el cuadro superior.</p>
+{% endif %}
+
+{# —— Modales (crear / editar / eliminar subcategoría) —— #}
+<div class="mmq-modal-root" id="mmq-modal-root" hidden aria-hidden="true">
+  <div class="mmq-modal-backdrop js-mmq-modal-close"></div>
+
+  <div class="mmq-modal-shell" id="mmq-modal-sub-form" role="dialog" aria-modal="true" aria-labelledby="mmq-modal-sub-form-title" hidden>
+    <div class="mmq-modal-card">
+      <div class="mmq-modal-head">
+        <h3 class="mmq-modal-title" id="mmq-modal-sub-form-title">Subcategoría</h3>
+        <button type="button" class="mmq-modal-x js-mmq-modal-close" aria-label="Cerrar">×</button>
+      </div>
+      <form id="mmq-form-sub-save" method="post" action="#" class="stack-form">
+        <input type="hidden" name="categoria_id" id="mmq-fs-categoria-id" value="">
+        <label>Nombre<span class="req">*</span>
+          <input type="text" name="nombre" id="mmq-fs-nombre" required maxlength="220" autocomplete="off">
+        </label>
+        <label>Orden de aparición
+          <input type="number" name="orden" id="mmq-fs-orden" min="0" value="0">
+        </label>
+        <label>Área sugerida (opcional)
+          <select name="area_id_principal" id="mmq-fs-area"></select>
+        </label>
+        <div class="mmq-modal-actions">
+          <button type="button" class="btn btn-ghost js-mmq-modal-close">Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="mmq-fs-submit">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="mmq-modal-shell" id="mmq-modal-sub-del" role="dialog" aria-modal="true" aria-labelledby="mmq-modal-sub-del-title" hidden>
+    <div class="mmq-modal-card mmq-modal-card--narrow">
+      <div class="mmq-modal-head">
+        <h3 class="mmq-modal-title" id="mmq-modal-sub-del-title">Eliminar subcategoría</h3>
+        <button type="button" class="mmq-modal-x js-mmq-modal-close" aria-label="Cerrar">×</button>
+      </div>
+      <p class="mmq-modal-text" id="mmq-modal-del-text"></p>
+      <form id="mmq-form-sub-del" method="post" action="#" class="mmq-modal-actions mmq-modal-actions--split">
+        <input type="hidden" name="categoria_id" id="mmq-del-categoria-id" value="">
+        <button type="button" class="btn btn-ghost js-mmq-modal-close">Cancelar</button>
+        <button type="submit" class="btn btn-danger">Eliminar</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="mmq-modal-shell" id="mmq-modal-cat-del" role="dialog" aria-modal="true" aria-labelledby="mmq-modal-cat-del-title" hidden>
+    <div class="mmq-modal-card mmq-modal-card--narrow">
+      <div class="mmq-modal-head">
+        <h3 class="mmq-modal-title" id="mmq-modal-cat-del-title">Eliminar categoría</h3>
+        <button type="button" class="mmq-modal-x js-mmq-modal-close" aria-label="Cerrar">×</button>
+      </div>
+      <p class="mmq-modal-text" id="mmq-modal-cat-del-text"></p>
+      <p class="mmq-modal-muted-hint muted">Se eliminan también todas las subcategorías de este rubro (solo cuando no hay expedientes vinculados).</p>
+      <form id="mmq-form-cat-del" method="post" action="#" class="mmq-modal-actions mmq-modal-actions--split">
+        <button type="button" class="btn btn-ghost js-mmq-modal-close">Cancelar</button>
+        <button type="submit" class="btn btn-danger">Eliminar todo el rubro</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var root = document.querySelector(".js-cat-acc-root");
+  if (root) {
+    root.querySelectorAll(".js-cat-acc-item").forEach(function (item) {
+      item.addEventListener("toggle", function () {
+        if (!item.open) return;
+        root.querySelectorAll(".js-cat-acc-item").forEach(function (other) {
+          if (other !== item) other.open = false;
+        });
+      });
+    });
+  }
+
+  var PH = "982734651";
+  var tplEl = document.getElementById("mmq-url-tpl");
+  var urlCrearTpl = tplEl ? tplEl.getAttribute("data-crear") || "" : "";
+  var urlEditTpl = tplEl ? tplEl.getAttribute("data-editar") || "" : "";
+  var urlDelTpl = tplEl ? tplEl.getAttribute("data-eliminar") || "" : "";
+  var urlCatDelTpl = tplEl ? tplEl.getAttribute("data-catelim") || "" : "";
+
+  var areas = [];
+  try {
+    var aj = document.getElementById("mmq-areas-json");
+    areas = JSON.parse(aj ? aj.textContent : "[]") || [];
+  } catch (e) {
+    areas = [];
+  }
+
+  var modalRoot = document.getElementById("mmq-modal-root");
+  var panForm = document.getElementById("mmq-modal-sub-form");
+  var panDel = document.getElementById("mmq-modal-sub-del");
+  var formSave = document.getElementById("mmq-form-sub-save");
+  var formDel = document.getElementById("mmq-form-sub-del");
+  var titleForm = document.getElementById("mmq-modal-sub-form-title");
+  var selArea = document.getElementById("mmq-fs-area");
+  var hidCid = document.getElementById("mmq-fs-categoria-id");
+  var inpNom = document.getElementById("mmq-fs-nombre");
+  var inpOrd = document.getElementById("mmq-fs-orden");
+  var delText = document.getElementById("mmq-modal-del-text");
+  var panCatDel = document.getElementById("mmq-modal-cat-del");
+  var formCatDel = document.getElementById("mmq-form-cat-del");
+  var catDelText = document.getElementById("mmq-modal-cat-del-text");
+
+  if (!modalRoot || !panForm || !panDel || !formSave || !formDel || !panCatDel || !formCatDel || !catDelText) {
+    return;
+  }
+
+  function refillAreas(selectedId) {
+    if (!selArea) return;
+    selArea.innerHTML = "";
+    var o0 = document.createElement("option");
+    o0.value = "";
+    o0.textContent = "— Ninguna —";
+    selArea.appendChild(o0);
+    areas.forEach(function (a) {
+      var o = document.createElement("option");
+      o.value = a.id;
+      o.textContent = a.nombre;
+      if (String(selectedId) === String(a.id)) o.selected = true;
+      selArea.appendChild(o);
+    });
+  }
+
+  function openBackdrop() {
+    if (!modalRoot) return;
+    modalRoot.hidden = false;
+    modalRoot.setAttribute("aria-hidden", "false");
+    document.body.classList.add("mmq-modal-open");
+  }
+
+  function closeModal() {
+    if (!modalRoot) return;
+    panForm.hidden = true;
+    panDel.hidden = true;
+    panCatDel.hidden = true;
+    modalRoot.hidden = true;
+    modalRoot.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("mmq-modal-open");
+  }
+
+  document.querySelectorAll(".js-mmq-modal-close").forEach(function (el) {
+    el.addEventListener("click", function () {
+      closeModal();
+    });
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && modalRoot && !modalRoot.hidden) closeModal();
+  });
+
+  function openFormNew(cid) {
+    if (!urlCrearTpl || urlCrearTpl.indexOf(PH) === -1) return;
+    titleForm.textContent = "Nueva subcategoría";
+    formSave.action = urlCrearTpl.split(PH).join(String(cid));
+    hidCid.value = String(cid);
+    inpNom.value = "";
+    inpOrd.value = "0";
+    refillAreas("");
+    panDel.hidden = true;
+    panCatDel.hidden = true;
+    panForm.hidden = false;
+    openBackdrop();
+    setTimeout(function () { inpNom.focus(); }, 80);
+  }
+
+  function openFormEdit(d) {
+    if (!urlEditTpl || urlEditTpl.indexOf(PH) === -1) return;
+    titleForm.textContent = "Editar subcategoría";
+    formSave.action = urlEditTpl.split(PH).join(String(d.sid));
+    hidCid.value = String(d.cid);
+    inpNom.value = d.nombre;
+    inpOrd.value = d.orden;
+    refillAreas(d.area || "");
+    panDel.hidden = true;
+    panCatDel.hidden = true;
+    panForm.hidden = false;
+    openBackdrop();
+    setTimeout(function () { inpNom.focus(); }, 80);
+  }
+
+  function openDel(d) {
+    if (!urlDelTpl || urlDelTpl.indexOf(PH) === -1) return;
+    formDel.action = urlDelTpl.split(PH).join(String(d.sid));
+    delText.textContent = "";
+    delText.appendChild(document.createTextNode("¿Eliminar la subcategoría «"));
+    var strong = document.createElement("strong");
+    strong.textContent = d.nombre || "";
+    delText.appendChild(strong);
+    delText.appendChild(document.createTextNode(
+      "»? Solo aparece esta opción si no hay denuncias o quejas usando ese rubro."
+    ));
+    var hidDel = document.getElementById("mmq-del-categoria-id");
+    if (hidDel) hidDel.value = String(d.cid);
+    panForm.hidden = true;
+    panCatDel.hidden = true;
+    panDel.hidden = false;
+    openBackdrop();
+  }
+
+  function openCatDel(d) {
+    if (!urlCatDelTpl || urlCatDelTpl.indexOf(PH) === -1) return;
+    formCatDel.action = urlCatDelTpl.split(PH).join(String(d.cid));
+    catDelText.textContent = "";
+    catDelText.appendChild(document.createTextNode("¿Eliminar la categoría «"));
+    var st = document.createElement("strong");
+    st.textContent = d.nombre || "";
+    catDelText.appendChild(st);
+    catDelText.appendChild(document.createTextNode(
+      "» y todas sus subcategorías? Verifique antes que nadie registre desde el portal con este rubro."
+    ));
+    panForm.hidden = true;
+    panDel.hidden = true;
+    panCatDel.hidden = false;
+    openBackdrop();
+  }
+
+  document.querySelectorAll(".js-mmq-sub-add").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      openFormNew(btn.getAttribute("data-categoria-id"));
+    });
+  });
+
+  document.querySelectorAll(".js-mmq-sub-edit").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      openFormEdit({
+        sid: btn.getAttribute("data-sid"),
+        cid: btn.getAttribute("data-cid"),
+        nombre: btn.getAttribute("data-nombre"),
+        orden: btn.getAttribute("data-orden"),
+        area: btn.getAttribute("data-area") || ""
+      });
+    });
+  });
+
+  document.querySelectorAll(".js-mmq-sub-del").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      openDel({
+        sid: btn.getAttribute("data-sid"),
+        cid: btn.getAttribute("data-cid"),
+        nombre: btn.getAttribute("data-nombre")
+      });
+    });
+  });
+
+  document.querySelectorAll(".js-mmq-cat-del").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      openCatDel({
+        cid: btn.getAttribute("data-cid"),
+        nombre: btn.getAttribute("data-nombre")
+      });
+    });
+  });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,148 @@
+{% extends "base_admin.html" %}
+{% block title %}Bandeja · MMQEP{% endblock %}
+{% block page_heading %}Bandeja de denuncias{% endblock %}
+{% block body %}
+
+<div class="card form-card filtros-panel">
+  <h2 class="card-title">Filtros</h2>
+  <form method="get" class="grid-filtros" id="form-filtros-bandeja">
+    <label>Código<input type="text" name="filtro_codigo" value="{{ filtros.get('filtro_codigo','') }}" placeholder="Contiene"></label>
+    <label>Categoría
+      <select name="filtro_categoria_id" id="filtro_categoria_band">
+        <option value="">— Todas —</option>
+        {% for c in categorias_dropdown %}
+        <option value="{{ c.id }}" {{ 'selected' if filtros.get('filtro_categoria_id')|string == c.id|string }}>{{ c.nombre }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Subcategoría
+      <select name="filtro_subcategoria_id" id="filtro_subcategoria_band">
+        <option value="">— Todas —</option>
+      </select>
+    </label>
+    {% if session.get('rol') in ('Administrador','Consulta') and areas_opciones %}
+    <label>Área institucional
+      <select name="filtro_area_id">
+        <option value="">— Todas —</option>
+        {% for a in areas_opciones %}
+        <option value="{{ a.id }}" {{ 'selected' if filtros.get('filtro_area_id')|string == a.id|string }}>{{ a.nombre }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    <label>Estado
+      <select name="filtro_estado">
+        <option value="">— Todos —</option>
+        {% for e in estados_lista %}<option value="{{ e }}" {{ 'selected' if filtros.get('filtro_estado') == e }}>{{ e }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Prioridad
+      <select name="filtro_prioridad">
+        <option value="">— Todas —</option>
+        {% for p in prioridades_lista %}<option value="{{ p }}" {{ 'selected' if filtros.get('filtro_prioridad') == p }}>{{ p }}</option>{% endfor %}
+      </select>
+    </label>
+    {% if session.get('rol') in ('Administrador','Consulta') %}
+    <label>Responsable
+      <select name="filtro_responsable">
+        <option value="">— Todos —</option>
+        {% for u in usuarios_resp %}
+        <option value="{{ u.id }}" {{ 'selected' if filtros.get('filtro_responsable')|string == u.id|string }}>{{ u.nombres }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    <label>Desde (fecha)<input type="date" name="fecha_desde" value="{{ filtros.get('fecha_desde','') }}"></label>
+    <label>Hasta (fecha)<input type="date" name="fecha_hasta" value="{{ filtros.get('fecha_hasta','') }}"></label>
+    <div class="filtros-acciones">
+      <button type="submit" class="btn btn-primary">Aplicar</button>
+      <a class="btn btn-ghost" href="{{ url_for('admin_denuncias.admin_lista_denuncias') }}">Limpiar</a>
+    </div>
+  </form>
+</div>
+
+<div class="card table-card spacing-top">
+  <div class="table-wrap scroll-x">
+    <table class="data-table striped">
+      <thead>
+        <tr>
+          <th>Código</th>
+          <th>Anónimo</th>
+          <th>Rubro</th>
+          <th>Área</th>
+          <th>Prioridad</th>
+          <th>Estado</th>
+          <th>Responsable</th>
+          <th>Ingreso</th>
+          <th class="th-actions">Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in denuncias %}
+        <tr>
+          <td><code>{{ d.codigo }}</code></td>
+          <td>{{ 'Sí' if d.es_anonima else 'No' }}</td>
+          <td class="wrap-cell">{{ d.subcategoria or d.categoria }}</td>
+          <td class="wrap-cell">{{ d.area_nombre or '—' }}</td>
+          <td><span class="badge">{{ d.prioridad }}</span></td>
+          <td>{{ d.estado }}</td>
+          <td>{{ d.asignado or '—' }}</td>
+          <td>{{ d.fecha_creacion }}</td>
+          <td class="td-actions">
+            <a class="btn btn-small btn-primary" href="{{ url_for('admin_denuncias.admin_detalle', did=d.id) }}">Ver</a>
+            {% if session.get('rol') == 'Administrador' %}
+            <a class="btn btn-small btn-outline" href="{{ url_for('admin_denuncias.admin_reporte_denuncia_interno_pdf', did=d.id) }}" title="Reporte interno PDF">PDF int.</a>
+            <a class="btn btn-small btn-outline" href="{{ url_for('admin_denuncias.admin_reporte_denuncia_externo_pdf', did=d.id) }}" title="Reporte externo (ciudadano) PDF">PDF ext.</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="muted">No hay registros que coincidan.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script type="application/json" id="mmq-subs-por-cat">{{ subs_por_cat|tojson }}</script>
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  var el = document.getElementById('mmq-subs-por-cat');
+  var mp = {};
+  try { mp = JSON.parse(el.textContent || '{}'); } catch (e) {}
+  var selCat = document.getElementById('filtro_categoria_band');
+  var selSub = document.getElementById('filtro_subcategoria_band');
+  var inicialId = {{ (filtros.get('filtro_subcategoria_id') or '') | tojson }};
+  function subListFor(catVal) {
+    if (!catVal) return [];
+    return mp[String(catVal)] || mp[catVal] || [];
+  }
+  function llenarSub(catVal, keepId) {
+    while (selSub.options.length > 1) selSub.remove(1);
+    var lst = subListFor(catVal);
+    lst.forEach(function (row) {
+      var opt = document.createElement('option');
+      opt.value = row.id;
+      opt.textContent = row.nombre;
+      if (String(keepId) === String(row.id)) opt.selected = true;
+      selSub.appendChild(opt);
+    });
+    if (keepId && lst.length && !Array.from(selSub.options).some(function(o){ return String(o.value)===String(keepId);})) {
+      var o2 = document.createElement('option');
+      o2.value = keepId; o2.textContent = '#' + keepId + ' (hist.)'; o2.selected = true;
+      selSub.appendChild(o2);
+    }
+  }
+  if (selCat && selSub) {
+    selCat.addEventListener('change', function(){ llenarSub(selCat.value, ''); });
+    if (selCat.value) llenarSub(selCat.value, inicialId || '');
+    else if (inicialId) {
+      selSub.innerHTML = '<option value="">— Todas —</option>';
+      var o2 = document.createElement('option');
+      o2.value = inicialId; o2.textContent = 'Sub #' + inicialId; o2.selected = true;
+      selSub.appendChild(o2);
+    }
+  }
+});
+</script>
+{% endblock %}

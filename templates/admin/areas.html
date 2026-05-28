@@ -1,0 +1,337 @@
+{% extends "base_admin.html" %}
+{% block title %}Áreas institucionales MMQEP{% endblock %}
+{% block page_heading %}Áreas institucionales{% endblock %}
+{% block body %}
+
+<p class="hint cat-page-intro">Cada <strong>área</strong> debe tener un <strong>responsable</strong> (usuario con rol Responsable). En el listado solo verá personas <strong>disponibles</strong> (sin otra área asignada) o el responsable actual al editar. Puede crear un responsable nuevo sin salir de esta pantalla.</p>
+
+<script type="application/json" id="mmq-resp-catalog">{{ responsables_catalog|tojson }}</script>
+
+<span id="mmq-area-url-tpl" style="display:none"
+  data-crear="{{ url_for('admin_denuncias.admin_area_crear') }}"
+  data-actualizar="{{ url_for('admin_denuncias.admin_area_actualizar', aid=983983983) }}"
+  data-eliminar="{{ url_for('admin_denuncias.admin_area_eliminar', aid=983983983) }}"
+  data-rapido="{{ url_for('admin_denuncias.admin_area_responsable_rapido') }}"
+></span>
+
+<div class="card spacing-top">
+  <div class="subcat-table-head">
+    <h2 class="cat-sub-heading cat-toolbar-title-inline">Lista de áreas</h2>
+    <button type="button" class="btn btn-primary btn-small js-mmq-area-add" title="Registrar área">
+      <span class="mmq-plus">+</span> Nueva área
+    </button>
+  </div>
+
+  {% if areas %}
+  <div class="table-wrap scroll-x spacing-top-mini">
+    <table class="data-table striped small cat-sub-table area-inst-table">
+      <thead>
+        <tr>
+          <th class="th-n">N.º</th>
+          <th>Nombre del área</th>
+          <th>Responsable</th>
+          <th>Expedientes</th>
+          <th>En portal</th>
+          <th class="th-actions">Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in areas %}
+        <tr class="{% if not a.activo %}row-muted{% endif %}">
+          <td class="td-n">{{ loop.index }}</td>
+          <td class="wrap-cell td-name">{{ a.nombre }}</td>
+          <td class="wrap-cell">
+            {% if a.responsable_nombres %}
+              <strong>{{ a.responsable_nombres }}</strong><br>
+              <a href="mailto:{{ a.responsable_correo }}">{{ a.responsable_correo }}</a>
+            {% else %}
+              <span class="muted">Sin asignar</span>
+            {% endif %}
+          </td>
+          <td>{% set na = (a.denuncias_cnt | default(0))|int %}<span {% if na > 0 %}class="muted"{% endif %} title="Denuncias/quejas con área asignada">{{ na }}</span></td>
+          <td>
+            <form method="post" action="{{ url_for('admin_denuncias.admin_area_alternar', aid=a.id) }}" class="inline-form">
+              <button type="submit" class="btn-icon-tiny {% if a.activo %}btn-icon-tiny--on{% else %}btn-icon-tiny--off{% endif %}"
+                title="{{ 'Desactivar área en filtros/catálogo' if a.activo else 'Activar área' }}" aria-label="Visibilidad del área">
+                {% if a.activo %}
+                <svg class="ico-svg ico-svg--sm" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6m0-2a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0-4c5 0 9.27 3.11 11 7-1.73 3.89-6 7-11 7S1.73 15.89 0 12c1.73-3.89 6-7 11-7"/></svg>
+                {% else %}
+                <svg class="ico-svg ico-svg--sm" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.79-2.74 3.77-4.53-1.82-3.07-5.09-5.22-9.33-5.22-1.28 0-2.51.21-3.65.59l2.18 2.18C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.42-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>
+                {% endif %}
+              </button>
+            </form>
+          </td>
+          <td class="td-actions-cell">
+            <div class="row-actions">
+              <button type="button" class="btn btn-outline btn-mini js-mmq-area-edit"
+                data-aid="{{ a.id }}"
+                data-nombre="{{ a.nombre|e }}"
+                data-responsable="{{ a.responsable_uid or '' }}">Editar</button>
+              {% if na == 0 %}
+              <button type="button" class="btn btn-outline btn-mini btn-danger-soft js-mmq-area-del"
+                data-aid="{{ a.id }}" data-nombre="{{ a.nombre|e }}"
+                title="Eliminar solo si no hay expedientes enlazados">Eliminar</button>
+              {% else %}
+              <span class="muted table-hint" title="Quite la asignación de expedientes antes de poder eliminar">No eliminable ({{ na }})</span>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted spacing-top">No hay áreas registradas.</p>
+  {% endif %}
+</div>
+
+{# Modales áreas #}
+<div class="mmq-modal-root" id="mmq-modal-area-root" hidden aria-hidden="true">
+  <div class="mmq-modal-backdrop js-mmq-area-modal-close"></div>
+
+  <div class="mmq-modal-shell" id="mmq-modal-area-form" role="dialog" aria-modal="true" aria-labelledby="mmq-modal-area-form-title" hidden>
+    <div class="mmq-modal-card">
+      <div class="mmq-modal-head">
+        <h3 class="mmq-modal-title" id="mmq-modal-area-form-title">Área institucional</h3>
+        <button type="button" class="mmq-modal-x js-mmq-area-modal-close" aria-label="Cerrar">×</button>
+      </div>
+      <form id="mmq-form-area-save" method="post" action="#" class="stack-form" data-area-edit-id="">
+        <label>Nombre del área<span class="req">*</span>
+          <input type="text" name="nombre" id="mmq-area-nombre" required maxlength="220">
+        </label>
+        <label>Usuario responsable<span class="req">*</span>
+          <select name="responsable_usuario_id" id="mmq-area-responsable" required>
+            <option value="" disabled selected>— Elija un responsable —</option>
+          </select>
+        </label>
+        <p class="hint" id="mmq-resp-hint">Solo se listan responsables <strong>disponibles</strong> (sin otra área) o el actual de esta área al editar.</p>
+
+        <details class="subcard spacing-top-mini" id="mmq-wrap-rapido">
+          <summary class="subsection" style="cursor:pointer">Crear responsable aquí</summary>
+          <div class="stack-form spacing-top-mini">
+            <label>Nombres y apellidos<input type="text" id="mmq-rapido-nombres" maxlength="180" autocomplete="off"></label>
+            <label>Correo institucional<input type="email" id="mmq-rapido-correo" maxlength="160" autocomplete="off"></label>
+            <label>Contraseña inicial<input type="password" id="mmq-rapido-pass" minlength="8" autocomplete="new-password"></label>
+            <button type="button" class="btn btn-outline btn-small" id="mmq-btn-rapido-resp">Crear y seleccionar</button>
+            <p class="hint" id="mmq-rapido-msg" role="status"></p>
+          </div>
+        </details>
+
+        <div class="mmq-modal-actions">
+          <button type="button" class="btn btn-ghost js-mmq-area-modal-close">Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="mmq-area-submit">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="mmq-modal-shell" id="mmq-modal-area-del" role="dialog" aria-modal="true" aria-labelledby="mmq-modal-area-del-title" hidden>
+    <div class="mmq-modal-card mmq-modal-card--narrow">
+      <div class="mmq-modal-head">
+        <h3 class="mmq-modal-title" id="mmq-modal-area-del-title">Eliminar área</h3>
+        <button type="button" class="mmq-modal-x js-mmq-area-modal-close" aria-label="Cerrar">×</button>
+      </div>
+      <p class="mmq-modal-text" id="mmq-modal-area-del-text"></p>
+      <form id="mmq-form-area-del" method="post" action="#" class="mmq-modal-actions mmq-modal-actions--split">
+        <button type="button" class="btn btn-ghost js-mmq-area-modal-close">Cancelar</button>
+        <button type="submit" class="btn btn-danger">Eliminar</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var PH = "983983983";
+  var tpl = document.getElementById("mmq-area-url-tpl");
+  var urlCrear = tpl ? (tpl.getAttribute("data-crear") || "") : "";
+  var urlActTpl = tpl ? (tpl.getAttribute("data-actualizar") || "") : "";
+  var urlDelTpl = tpl ? (tpl.getAttribute("data-eliminar") || "") : "";
+  var urlRapido = tpl ? (tpl.getAttribute("data-rapido") || "") : "";
+
+  var catEl = document.getElementById("mmq-resp-catalog");
+  var catalog = [];
+  if (catEl && catEl.textContent) {
+    try { catalog = JSON.parse(catEl.textContent); } catch (e) { catalog = []; }
+  }
+
+  var modalRoot = document.getElementById("mmq-modal-area-root");
+  var panForm = document.getElementById("mmq-modal-area-form");
+  var panDel = document.getElementById("mmq-modal-area-del");
+  var formSave = document.getElementById("mmq-form-area-save");
+  var formDel = document.getElementById("mmq-form-area-del");
+  var titleForm = document.getElementById("mmq-modal-area-form-title");
+  var inpNom = document.getElementById("mmq-area-nombre");
+  var inpResp = document.getElementById("mmq-area-responsable");
+  var delText = document.getElementById("mmq-modal-area-del-text");
+  var inpRapNom = document.getElementById("mmq-rapido-nombres");
+  var inpRapCor = document.getElementById("mmq-rapido-correo");
+  var inpRapPwd = document.getElementById("mmq-rapido-pass");
+  var btnRapido = document.getElementById("mmq-btn-rapido-resp");
+  var msgRapido = document.getElementById("mmq-rapido-msg");
+  var detRapido = document.getElementById("mmq-wrap-rapido");
+
+  if (!modalRoot || !panForm || !panDel || !formSave || !formDel) return;
+
+  function filtrarResponsables(areaEditId) {
+    var aid = areaEditId != null && String(areaEditId) !== ""
+      ? parseInt(String(areaEditId), 10)
+      : null;
+    return catalog.filter(function (u) {
+      if (!u.area_id) return true;
+      if (aid != null && !isNaN(aid) && Number(u.area_id) === aid) return true;
+      return false;
+    });
+  }
+
+  function llenarSelectResponsables(areaEditId, preselectId) {
+    if (!inpResp) return;
+    var opts = filtrarResponsables(areaEditId);
+    while (inpResp.firstChild) inpResp.removeChild(inpResp.firstChild);
+    var ph = document.createElement("option");
+    ph.value = "";
+    ph.disabled = true;
+    ph.selected = true;
+    ph.textContent = "— Elija un responsable —";
+    inpResp.appendChild(ph);
+    opts.forEach(function (u) {
+      var o = document.createElement("option");
+      o.value = String(u.id);
+      o.textContent = u.nombres + " · " + u.correo;
+      inpResp.appendChild(o);
+    });
+    if (preselectId) {
+      inpResp.value = String(preselectId);
+    }
+    if (msgRapido) msgRapido.textContent = "";
+  }
+
+  function closeAreaModal() {
+    panForm.hidden = true;
+    panDel.hidden = true;
+    modalRoot.hidden = true;
+    modalRoot.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("mmq-modal-open");
+    if (inpRapNom) inpRapNom.value = "";
+    if (inpRapCor) inpRapCor.value = "";
+    if (inpRapPwd) inpRapPwd.value = "";
+    if (detRapido) detRapido.open = false;
+  }
+
+  function openAreaBackdrop() {
+    modalRoot.hidden = false;
+    modalRoot.setAttribute("aria-hidden", "false");
+    document.body.classList.add("mmq-modal-open");
+  }
+
+  document.querySelectorAll(".js-mmq-area-modal-close").forEach(function (el) {
+    el.addEventListener("click", closeAreaModal);
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && modalRoot && !modalRoot.hidden) closeAreaModal();
+  });
+
+  var addBtn = document.querySelector(".js-mmq-area-add");
+  if (addBtn) addBtn.addEventListener("click", function () {
+    if (!urlCrear) return;
+    titleForm.textContent = "Nueva área";
+    formSave.action = urlCrear;
+    formSave.setAttribute("data-area-edit-id", "");
+    inpNom.value = "";
+    llenarSelectResponsables(null, null);
+    panDel.hidden = true;
+    panForm.hidden = false;
+    openAreaBackdrop();
+    setTimeout(function () { inpNom.focus(); }, 60);
+  });
+
+  document.querySelectorAll(".js-mmq-area-edit").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      if (!urlActTpl || urlActTpl.indexOf(PH) === -1) return;
+      var aid = btn.getAttribute("data-aid");
+      var rid = btn.getAttribute("data-responsable") || "";
+      titleForm.textContent = "Editar área";
+      formSave.action = urlActTpl.split(PH).join(String(aid));
+      formSave.setAttribute("data-area-edit-id", String(aid));
+      inpNom.value = btn.getAttribute("data-nombre") || "";
+      llenarSelectResponsables(aid, rid || null);
+      panDel.hidden = true;
+      panForm.hidden = false;
+      openAreaBackdrop();
+      setTimeout(function () { inpNom.focus(); }, 60);
+    });
+  });
+
+  document.querySelectorAll(".js-mmq-area-del").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      if (!urlDelTpl || urlDelTpl.indexOf(PH) === -1) return;
+      var aid = btn.getAttribute("data-aid");
+      formDel.action = urlDelTpl.split(PH).join(String(aid));
+      delText.textContent = "";
+      delText.appendChild(document.createTextNode("¿Eliminar el área «"));
+      var st = document.createElement("strong");
+      st.textContent = btn.getAttribute("data-nombre") || "";
+      delText.appendChild(st);
+      delText.appendChild(document.createTextNode("» del catálogo? Si tenía Responsable o subcategorías sugeridas, quedarán desvinculados."));
+      panForm.hidden = true;
+      panDel.hidden = false;
+      openAreaBackdrop();
+    });
+  });
+
+  if (btnRapido && urlRapido) {
+    btnRapido.addEventListener("click", function () {
+      var nom = inpRapNom && inpRapNom.value.trim();
+      var cor = inpRapCor && inpRapCor.value.trim();
+      var pwd = inpRapPwd && inpRapPwd.value;
+      if (!nom || nom.length < 3) {
+        if (msgRapido) msgRapido.textContent = "Indique nombre (mínimo 3 caracteres).";
+        return;
+      }
+      if (!cor || cor.indexOf("@") === -1) {
+        if (msgRapido) msgRapido.textContent = "Indique un correo válido.";
+        return;
+      }
+      if (!pwd || pwd.length < 8) {
+        if (msgRapido) msgRapido.textContent = "La contraseña debe tener al menos 8 caracteres.";
+        return;
+      }
+      btnRapido.disabled = true;
+      if (msgRapido) msgRapido.textContent = "Creando…";
+      fetch(urlRapido, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
+        body: JSON.stringify({ nombres: nom, correo: cor, password: pwd })
+      }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; }); })
+        .then(function (x) {
+          btnRapido.disabled = false;
+          if (x.j && x.j.ok) {
+            catalog.push({ id: x.j.id, nombres: x.j.nombres, correo: x.j.correo, area_id: null });
+            var ae = formSave.getAttribute("data-area-edit-id");
+            var aid = ae && String(ae) !== "" ? ae : null;
+            var sel = x.j.id;
+            llenarSelectResponsables(aid, sel);
+            if (inpResp) inpResp.value = String(x.j.id);
+            if (msgRapido) msgRapido.textContent = "Usuario creado y seleccionado.";
+            if (inpRapNom) inpRapNom.value = "";
+            if (inpRapCor) inpRapCor.value = "";
+            if (inpRapPwd) inpRapPwd.value = "";
+          } else {
+            if (msgRapido) msgRapido.textContent = (x.j && x.j.error) ? x.j.error : "No se pudo crear.";
+          }
+        })
+        .catch(function () {
+          btnRapido.disabled = false;
+          if (msgRapido) msgRapido.textContent = "Error de red o del servidor.";
+        });
+    });
+  }
+})();
+</script>
+{% endblock %}

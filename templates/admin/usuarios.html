@@ -1,0 +1,199 @@
+{% extends "base_admin.html" %}
+{% block title %}Usuarios internos · MMQEP{% endblock %}
+{% block page_heading %}Usuarios institucionales{% endblock %}
+{% block body %}
+
+<div class="grid-two-responsive">
+  <div class="card form-card stack-form">
+    <h2 class="card-title">Crear usuario</h2>
+    <form method="post" action="{{ url_for('admin_denuncias.admin_crear_usuario') }}" autocomplete="off" id="form-crear-user">
+      <label>Nombres y apellidos<input type="text" name="nombres" required maxlength="180"></label>
+      <label>Correo institucional<input type="email" name="correo" required maxlength="160"></label>
+      <label>Contraseña inicial<input type="password" name="password" required minlength="8" autocomplete="new-password"></label>
+      <label>Rol
+        <select name="rol" id="rol-nuevo-usuario">
+          {% for r in roles_opts %}
+          <option value="{{ r }}">{{ r }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <p class="hint">Si el rol es <strong>Responsable</strong>, después vincúlelo al área correspondiente en «Áreas institucionales» (un responsable por área).</p>
+      <button type="submit" class="btn btn-primary">Registrar usuario</button>
+    </form>
+  </div>
+
+  <div class="card table-card">
+    <h2 class="card-title">Listado</h2>
+    <div class="table-wrap scroll-x">
+      <table class="data-table striped small">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Nombres</th>
+            <th>Correo</th>
+            <th>Rol</th>
+            <th>Área (vínculo)</th>
+            <th>Activo</th>
+            <th>Exp. en curso (asign.)</th>
+            <th>Alta</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in usuarios %}
+          <tr>
+            <td>{{ u.id }}</td>
+            <td>{{ u.nombres }}</td>
+            <td>{{ u.correo }}</td>
+            <td>{{ u.rol }}</td>
+            <td>{{ u.area_nombre or '—' }}</td>
+            <td>{{ 'Sí' if u.activo else 'No' }}</td>
+            <td class="num-cell">{{ (u.denuncias_abiertas_asignadas or 0)|int }}</td>
+            <td>{{ u.fecha_creacion }}</td>
+            <td>
+              <a class="btn btn-outline btn-mini" href="{{ url_for('admin_denuncias.admin_editar_usuario', uid=u.id) }}">Editar</a>
+              {% if u.id != session['uid'] %}
+                {% if u.activo %}
+                  {% set n_pend = (u.denuncias_abiertas_asignadas or 0)|int %}
+                  {% if n_pend > 0 %}
+                  <button type="button" class="btn btn-outline btn-mini js-mmq-user-desactivar-con-reasign"
+                    data-user-id="{{ u.id }}"
+                    data-user-nombre="{{ u.nombres|e }}"
+                    data-pendientes="{{ n_pend }}">Desactivar</button>
+                  {% else %}
+                  <form method="post" action="{{ url_for('admin_denuncias.admin_toggle_usuario') }}" class="inline-form">
+                    <input type="hidden" name="usuario_id" value="{{ u.id }}">
+                    <button type="submit" class="btn btn-outline btn-mini">Desactivar</button>
+                  </form>
+                  {% endif %}
+                {% else %}
+                <form method="post" action="{{ url_for('admin_denuncias.admin_toggle_usuario') }}" class="inline-form">
+                  <input type="hidden" name="usuario_id" value="{{ u.id }}">
+                  <button type="submit" class="btn btn-outline btn-mini">Activar</button>
+                </form>
+                {% endif %}
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="mmq-modal-root" id="mmq-modal-user-desactivar-root" hidden aria-hidden="true">
+  <div class="mmq-modal-backdrop js-mmq-user-desactivar-close"></div>
+  <div class="mmq-modal-shell" id="mmq-modal-user-desactivar" role="dialog" aria-modal="true" aria-labelledby="mmq-modal-user-desactivar-title" hidden>
+    <div class="mmq-modal-card mmq-modal-card--narrow">
+      <div class="mmq-modal-head">
+        <h3 class="mmq-modal-title" id="mmq-modal-user-desactivar-title">Desactivar usuario</h3>
+        <button type="button" class="mmq-modal-x js-mmq-user-desactivar-close" aria-label="Cerrar">×</button>
+      </div>
+      <p class="mmq-modal-text" id="mmq-modal-user-desactivar-text"></p>
+      <form id="mmq-form-user-desactivar-reasign" method="post" action="{{ url_for('admin_denuncias.admin_toggle_usuario') }}" class="stack-form">
+        <input type="hidden" name="usuario_id" id="mmq-user-desactivar-id" value="">
+        <label>Reasignar expedientes en curso a
+          <select name="reassign_usuario_id" id="mmq-user-desactivar-select" required></select>
+        </label>
+        <p class="hint muted" id="mmq-user-desactivar-sin-candidatos" hidden>No hay otro administrador o responsable activo al que reasignar. Cree o active un usuario con ese rol antes de desactivar esta cuenta.</p>
+        <div class="mmq-modal-actions mmq-modal-actions--split">
+          <button type="button" class="btn btn-ghost js-mmq-user-desactivar-close">Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="mmq-user-desactivar-submit">Desactivar y reasignar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script type="application/json" id="mmq-candidatos-reasign-json">{{ candidatos_reasign|tojson }}</script>
+<script>
+(function () {
+  var root = document.getElementById("mmq-modal-user-desactivar-root");
+  var shell = document.getElementById("mmq-modal-user-desactivar");
+  var form = document.getElementById("mmq-form-user-desactivar-reasign");
+  var hid = document.getElementById("mmq-user-desactivar-id");
+  var sel = document.getElementById("mmq-user-desactivar-select");
+  var textEl = document.getElementById("mmq-modal-user-desactivar-text");
+  var hintVac = document.getElementById("mmq-user-desactivar-sin-candidatos");
+  var btnSubmit = document.getElementById("mmq-user-desactivar-submit");
+  var raw = document.getElementById("mmq-candidatos-reasign-json");
+  var candidatos = [];
+  try {
+    candidatos = raw ? JSON.parse(raw.textContent || "[]") : [];
+  } catch (e) {
+    candidatos = [];
+  }
+
+  function openModal() {
+    if (!root || !shell) return;
+    root.hidden = false;
+    root.setAttribute("aria-hidden", "false");
+    shell.hidden = false;
+    document.body.classList.add("mmq-modal-open");
+  }
+
+  function closeModal() {
+    if (!root || !shell) return;
+    shell.hidden = true;
+    root.hidden = true;
+    root.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("mmq-modal-open");
+  }
+
+  document.querySelectorAll(".js-mmq-user-desactivar-close").forEach(function (el) {
+    el.addEventListener("click", closeModal);
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && root && !root.hidden) closeModal();
+  });
+
+  function fillSelect(excludeId) {
+    if (!sel) return;
+    sel.innerHTML = "";
+    var opts = (candidatos || []).filter(function (c) {
+      return String(c.id) !== String(excludeId);
+    });
+    if (opts.length === 0) {
+      sel.disabled = true;
+      if (hintVac) hintVac.hidden = false;
+      if (btnSubmit) btnSubmit.disabled = true;
+      return;
+    }
+    sel.disabled = false;
+    if (hintVac) hintVac.hidden = true;
+    if (btnSubmit) btnSubmit.disabled = false;
+    var ph = document.createElement("option");
+    ph.value = "";
+    ph.textContent = "— Elija usuario —";
+    ph.disabled = true;
+    ph.selected = true;
+    sel.appendChild(ph);
+    opts.forEach(function (c) {
+      var o = document.createElement("option");
+      o.value = String(c.id);
+      o.textContent = (c.nombres || "") + " (" + (c.rol || "") + ", id " + c.id + ")";
+      sel.appendChild(o);
+    });
+  }
+
+  document.querySelectorAll(".js-mmq-user-desactivar-con-reasign").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var id = btn.getAttribute("data-user-id");
+      var nombre = btn.getAttribute("data-user-nombre") || "";
+      var n = btn.getAttribute("data-pendientes") || "0";
+      if (hid) hid.value = id;
+      fillSelect(id);
+      if (textEl) {
+        textEl.textContent =
+          "«" + nombre + "» tiene " + n + " expediente(s) en curso asignados. " +
+          "Elija a quién se reasignarán antes de desactivar la cuenta. " +
+          "En el historial de cada expediente quedará constancia de la reasignación por desactivación del usuario.";
+      }
+      openModal();
+    });
+  });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,29 @@
+{% extends "base_public.html" %}
+{% block title %}Registro confirmado · MMQEP{% endblock %}
+{% block body %}
+<main class="wrap section narrow">
+  <div class="card form-card centro">
+    <h1 class="page-title">{{ 'Registro guardado' if titulo_confirmacion else 'Confirmación' }}</h1>
+    <p>Su código de seguimiento es:</p>
+    <p class="codigo-huge">{{ codigo }}</p>
+    <p class="lead-small">Guarde este código en lugar seguro. Podrá usarlo más adelante en la opción <strong>Consultar estado</strong>.</p>
+    <p class="lead-small pdf-offer">¿Desea una copia en PDF con todos los datos que registró (comprobante)?</p>
+    <div class="form-actions centro">
+      <a class="btn btn-outline btn-large" id="link-pdf-comprobante" href="{{ url_for('public_denuncias.comprobante_pdf', cod=codigo) }}">Descargar comprobante PDF</a>
+      <a class="btn btn-primary btn-large" href="{{ url_for('public_denuncias.consulta') }}">Ir a consulta</a>
+      <a class="btn btn-ghost" href="{{ url_for('public_denuncias.index') }}">Nuevo registro</a>
+    </div>
+    <script>
+    (function () {
+      var a = document.getElementById("link-pdf-comprobante");
+      if (!a) return;
+      a.addEventListener("click", function (e) {
+        if (!confirm("Se descargará un PDF con el detalle de su denuncia. ¿Continuar?")) {
+          e.preventDefault();
+        }
+      });
+    })();
+    </script>
+  </div>
+</main>
+{% endblock %}

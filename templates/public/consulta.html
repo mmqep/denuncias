@@ -1,0 +1,48 @@
+{% extends "base_public.html" %}
+{% block title %}Consultar estado · MMQEP{% endblock %}
+{% block body %}
+<main class="wrap section narrow">
+  <h1 class="page-title">Consultar estado</h1>
+  <p class="lead">Ingrese el <strong>código</strong> que recibió al registrar su denuncia.</p>
+
+  {% if errores %}
+  <div class="card form-card">
+    <ul class="error-list">
+      {% for e in errores %}<li>{{ e }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if den %}
+  <div class="card form-card resultado-consulta">
+    <p class="muted">Código</p>
+    <p class="codigo-big">{{ den.codigo }}</p>
+    <dl class="res-grid">
+      <dt>Estado actual</dt>
+      <dd><span class="badge badge-estado">{{ den.estado }}</span></dd>
+      <dt>Registro recibido</dt>
+      <dd>{{ den.fecha_creacion }}</dd>
+      <dt>Última actualización</dt>
+      <dd>{{ den.fecha_actualizacion or '—' }}</dd>
+      <dt>Fecha de cierre</dt>
+      <dd>{{ den.fecha_cierre or '—' }}</dd>
+    </dl>
+    <p class="hint consulta-priv">Los datos identificadores del ciudadano solo son visibles dentro del canal institucional y no aparecen aquí si el caso es anónimo.</p>
+    <div class="form-actions">
+      <a class="btn btn-primary" href="{{ url_for('public_denuncias.consulta') }}">Consultar otro código</a>
+      <a class="btn btn-ghost" href="{{ url_for('public_denuncias.index') }}">Nuevo registro</a>
+    </div>
+  </div>
+  {% else %}
+  <form class="card form-card" method="post" action="{{ url_for('public_denuncias.consulta') }}">
+    <label>Código <span class="req">*</span>
+      <input type="text" name="codigo" value="{{ codigo_usado or '' }}" required autocomplete="off" placeholder="Ej.: MMQ-XXXXXXXX">
+    </label>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Consultar</button>
+      <a class="btn btn-ghost" href="{{ url_for('public_denuncias.index') }}">Volver al formulario</a>
+    </div>
+  </form>
+  {% endif %}
+</main>
+{% endblock %}

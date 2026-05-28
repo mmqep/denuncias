@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Panel — MMQEP{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="theme-admin">
+  <div class="admin-layout">
+    <aside class="admin-sidebar">
+      <div class="sidebar-brand">Gestión institucional</div>
+      <nav class="sidebar-nav">
+        <a href="{{ url_for('admin_denuncias.admin_dashboard') }}" class="{{ 'active' if request.endpoint == 'admin_denuncias.admin_dashboard' else '' }}">Dashboard</a>
+        <a href="{{ url_for('admin_denuncias.admin_lista_denuncias') }}" class="{{ 'active' if request.endpoint == 'admin_denuncias.admin_lista_denuncias' else '' }}">Bandeja de denuncias</a>
+        <a href="{{ url_for('admin_denuncias.admin_reportes') }}" class="{{ 'active' if request.endpoint == 'admin_denuncias.admin_reportes' else '' }}">Reportes</a>
+        {% if session.get('rol') == 'Administrador' %}
+        {% set ep_admin = request.endpoint or '' %}
+        <a href="{{ url_for('admin_denuncias.admin_categorias_panel') }}" class="{{ 'active' if 'admin_categorias_panel' in ep_admin or '.admin_cat' in ep_admin or '.admin_subcat' in ep_admin else '' }}">Categorías</a>
+        <a href="{{ url_for('admin_denuncias.admin_areas_panel') }}" class="{{ 'active' if 'admin_areas_panel' in ep_admin or 'admin_area_' in ep_admin else '' }}">Áreas</a>
+        <a href="{{ url_for('admin_denuncias.admin_usuarios') }}" class="{{ 'active' if 'admin_usuario' in ep_admin else '' }}">Usuarios</a>
+        {% endif %}
+        <div class="sidebar-divider"></div>
+        <a href="{{ url_for('public_denuncias.index') }}">Portal ciudadano</a>
+        <a href="{{ url_for('admin_denuncias.admin_logout') }}">Cerrar sesión</a>
+      </nav>
+      <div class="sidebar-user">
+        <strong>{{ session.get('nombres', '') }}</strong>
+        <span class="muted">{{ session.get('rol', '') }}</span>
+      </div>
+    </aside>
+    <div class="admin-content">
+      <header class="admin-topbar">
+        <h1 class="admin-page-title">{% block page_heading %}{% endblock %}</h1>
+        <button type="button" class="menu-toggle js-menu-toggle" aria-label="Menú">☰</button>
+      </header>
+
+      {% with msgs = get_flashed_messages(with_categories=true) %}
+      {% if msgs %}
+      <div class="wrap-inner flashes">
+        {% for cat, msg in msgs %}
+        <div role="alert" class="flash flash-{{ cat }}">{{ msg }}</div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% endwith %}
+
+      <div class="wrap-inner admin-main-pad">
+        {% block body %}{% endblock %}
+      </div>
+    </div>
+  </div>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
