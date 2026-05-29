@@ -1,14 +1,29 @@
-# Python 3.11+
+# Python 3.11+ (Vercel usa 3.11, compatible con 3.7+)
 # Crear ambiente virtual:
 # Linux/macOS: python3.11 -m venv venv && source venv/bin/activate
 # Windows: py -3.11 -m venv venv && venv\Scripts\activate
+
+# Framework principal
 Flask>=2.0.3,<2.3
-# Cliente Turso/libSQL (API estilo sqlite3, soporta réplica embebida)
-libsql>=0.1.0
-# Carga de configuración desde .env
+
+# Base de datos (MariaDB / Turso / libSQL)
+PyMySQL>=1.0.2,<2.0          # Para MariaDB local
+libsql>=0.1.0                # Para Turso en Vercel
+
+# Configuración desde variables de entorno
 python-dotenv>=1.0.0
+
+# Utilidades
 pytz>=2022.7
-openpyxl>=3.0.10,<4.0
 Werkzeug>=2.0.3,<3.0
+
+# Reportes y documentos
+openpyxl>=3.0.10,<4.0
 reportlab>=3.6.11
 Pillow>=9.0.1
+
+# Seguridad (para MySQL 8 / MariaDB)
+cryptography>=41.0.0
+
+# Almacenamiento en la nube (Backblaze B2)
+boto3>=1.34.0
