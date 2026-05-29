@@ -27,7 +27,7 @@ import openpyxl
 from openpyxl.utils import get_column_letter
 
 import pytz
-from db import IntegrityError
+from pymysql.err import IntegrityError
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
@@ -423,14 +423,12 @@ def create_app():
         static_folder=os.path.join(_HERE, "static"),
     )
 
-    # Vercel reemplaza flask con _vendor/flask cuyo _get_source_fast ignora
-    # template_folder. Reemplazamos el loader para bypasear ese mecanismo.
+    # Configuración para Vercel (NO ELIMINAR)
     try:
         from _templates_cache import TEMPLATES
         from jinja2 import DictLoader
         app.jinja_env.loader = DictLoader(TEMPLATES)
     except ImportError:
-        # Desarrollo local: sin cache, usar filesystem directamente.
         from jinja2 import FileSystemLoader
         app.jinja_env.loader = FileSystemLoader(os.path.join(_HERE, "templates"))
 
@@ -439,9 +437,19 @@ def create_app():
         DB_CONFIG=DB_CONFIG,
         MAX_CONTENT_LENGTH=int(MAX_UPLOAD_SIZE_BYTES) * 5,
         UPLOAD_FOLDER=os.path.join(app.root_path, UPLOAD_FOLDER),
-        # Flask 2.x: JSON y tojson en plantillas conservan caracteres unicode (acentos sin \uXXXX).
         JSON_ASCII=False,
     )
+
+    # Backblaze B2 (solo si está configurado en variables de entorno)
+    try:
+        from config import B2_ACCOUNT_ID, B2_APPLICATION_KEY, B2_BUCKET_NAME, B2_ENDPOINT_URL
+        if B2_ACCOUNT_ID and B2_APPLICATION_KEY:
+            app.config['B2_ACCOUNT_ID'] = B2_ACCOUNT_ID
+            app.config['B2_APPLICATION_KEY'] = B2_APPLICATION_KEY
+            app.config['B2_BUCKET_NAME'] = B2_BUCKET_NAME
+            app.config['B2_ENDPOINT_URL'] = B2_ENDPOINT_URL
+    except ImportError:
+        pass
 
     os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
@@ -616,6 +624,17 @@ def register_public_routes(bp):
             tel = (request.form.get("telefono") or "").strip()[:40] or None
             mail = (request.form.get("correo") or "").strip()[:160] or None
 
+        # Coordenadas del mapa
+        latitud = request.form.get("latitud") or None
+        longitud = request.form.get("longitud") or None
+        if latitud and longitud:
+            try:
+                latitud = float(latitud)
+                longitud = float(longitud)
+            except ValueError:
+                latitud = None
+                longitud = None
+
         errores = []
         conn = get_db()
         sc = obtener_subcategoria_valida(conn, sid_raw)
@@ -685,9 +704,10 @@ def register_public_routes(bp):
                   nombres_denunciante, identificacion_denunciante, telefono_denunciante, correo_denunciante,
                   categoria_id, subcategoria_id, categoria, subcategoria, prioridad, ubicacion,
                   fecha_hecho, hora_hecho, involucrado, descripcion,
-                  estado, fecha_creacion, usuario_asignado_id, area_id
+                  estado, fecha_creacion, usuario_asignado_id, area_id,
+                  latitud, longitud
                 ) VALUES (
-                  %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
+                  %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
                 )
                 """
                 vals = (
@@ -712,6 +732,8 @@ def register_public_routes(bp):
                     now_local(),
                     ua,
                     aid_asig,
+                    latitud,
+                    longitud
                 )
                 cur.execute(sql, vals)
                 nid = cur.lastrowid
@@ -735,7 +757,6 @@ def register_public_routes(bp):
             if ua and codigo:
                 registrar_alerta_simple(codigo, aid_asig, "NUEVO_REGISTRO_CIUDADANO", cat_nom[:80])
 
-            uploads = []
             fs = []
             lst = request.files.getlist("evidencias")
             for fobj in lst:
@@ -747,34 +768,54 @@ def register_public_routes(bp):
                 fname = secure_filename(os.path.basename(fobj.filename))
                 if not fname or not allowed_file(fname):
                     continue
+
                 fobj.seek(0, os.SEEK_END)
                 tam = fobj.tell()
                 if tam > MAX_UPLOAD_SIZE_BYTES:
                     flash("Un archivo excedió el tamaño máximo permitido y fue omitido.", "warning")
                     continue
                 fobj.seek(0)
-                ext = fname.rsplit(".", 1)[1].lower()
-                nuevo = "{}_{}".format(uuid.uuid4().hex, fname)
-                ruta_disk = os.path.join(current_app.config["UPLOAD_FOLDER"], nuevo)
 
                 mime = getattr(fobj, "mimetype", None) or ""
 
-                try:
-                    fobj.save(ruta_disk)
-                except Exception:
-                    flash("No se pudo guardar un archivo.", "danger")
-                    continue
+                # Subir a Backblaze B2 (si está configurado)
+                archivo_url = None
+                nombre_guardado = None
+                if current_app.config.get('B2_ACCOUNT_ID'):
+                    try:
+                        from cloud_storage import subir_archivo_b2
+                        archivo_url, nombre_guardado = subir_archivo_b2(fobj, fname)
+                    except ImportError:
+                        pass
 
-                rel = nuevo
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        INSERT INTO archivos_adjuntos (
-                          denuncia_id, nombre_original, nombre_guardado, ruta, tipo_mime, tamano, fecha_creacion
-                        ) VALUES (%s,%s,%s,%s,%s,%s,%s)
-                        """,
-                        (nid, fname, nuevo, rel, mime, tam, now_local()),
-                    )
+                if archivo_url:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            INSERT INTO archivos_adjuntos (
+                              denuncia_id, nombre_original, nombre_guardado, ruta, tipo_mime, tamano, fecha_creacion
+                            ) VALUES (%s,%s,%s,%s,%s,%s,%s)
+                            """,
+                            (nid, fname, nombre_guardado, archivo_url, mime, tam, now_local()),
+                        )
+                else:
+                    # Fallback: guardar localmente
+                    nuevo = f"{uuid.uuid4().hex}_{fname}"
+                    ruta_disk = os.path.join(current_app.config["UPLOAD_FOLDER"], nuevo)
+                    try:
+                        fobj.save(ruta_disk)
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                """
+                                INSERT INTO archivos_adjuntos (
+                                  denuncia_id, nombre_original, nombre_guardado, ruta, tipo_mime, tamano, fecha_creacion
+                                ) VALUES (%s,%s,%s,%s,%s,%s,%s)
+                                """,
+                                (nid, fname, nuevo, nuevo, mime, tam, now_local()),
+                            )
+                    except Exception:
+                        flash("No se pudo guardar un archivo.", "danger")
+                        continue
 
             conn.commit()
 
@@ -862,7 +903,7 @@ def register_public_routes(bp):
         if not errores:
             with db.cursor() as cur:
                 cur.execute(
-                    "SELECT codigo, estado, fecha_creacion, fecha_cierre, fecha_actualizacion, es_anonima FROM denuncias WHERE codigo=%s LIMIT 1",
+                    "SELECT codigo, estado, fecha_creacion, fecha_cierre, fecha_actualizacion, es_anonima FROM denuncias WHERE codigo=%s AND activo=1 LIMIT 1",
                     (cod,),
                 )
                 den = cur.fetchone()
@@ -874,13 +915,14 @@ def register_public_routes(bp):
 def register_admin_routes(bp):
 
     def listar_where_base(rol, uid):
+        base_filtro = "AND d.activo = 1"
         if rol == "Administrador" or rol == "Consulta":
-            return "", []
+            return base_filtro, []
         ua = session.get("area_id")
         if rol == "Responsable" and ua:
-            return "AND d.area_id IS NOT NULL AND d.area_id = %s", [ua]
+            return base_filtro + " AND d.area_id IS NOT NULL AND d.area_id = %s", [ua]
         if rol == "Responsable":
-            return "AND d.usuario_asignado_id = %s", [uid]
+            return base_filtro + " AND d.usuario_asignado_id = %s", [uid]
         return "AND 1=0", []
 
     def sql_y_args_bandeja_denuncias(req_args, rol, uid, limit=800):
@@ -964,9 +1006,9 @@ def register_admin_routes(bp):
 
         lista_sql = """
         SELECT d.id, d.codigo, d.estado, d.prioridad, d.es_anonima, d.fecha_creacion,
-               d.subcategoria, d.categoria, u.nombres AS asignado,
-               COALESCE(ar.nombre, '') AS area_nombre,
-               d.ubicacion, d.descripcion
+            d.subcategoria, d.categoria, u.nombres AS asignado,
+            COALESCE(ar.nombre, '') AS area_nombre,
+            d.ubicacion, d.descripcion, d.activo
         FROM denuncias d
         LEFT JOIN usuarios u ON u.id = d.usuario_asignado_id
         LEFT JOIN areas ar ON ar.id = d.area_id
@@ -1225,6 +1267,15 @@ def register_admin_routes(bp):
             )
             archivos = cur.fetchall()
 
+            # Generar URLs temporales para archivos en Backblaze
+            try:
+                from cloud_storage import obtener_url_archivo_b2
+                for a in archivos:
+                    a['url_temporal'] = obtener_url_archivo_b2(a['nombre_guardado'], expiracion_segundos=86400)
+            except ImportError:
+                for a in archivos:
+                    a['url_temporal'] = a['ruta']
+
             if rol == "Administrador":
                 cur.execute(
                     """
@@ -1354,8 +1405,7 @@ def register_admin_routes(bp):
         comentario = (request.form.get("comentario_reasignacion_interno") or "").strip()
         if len(comentario) < 10:
             flash(
-                "El comentario de uso interno es obligatorio (al menos 10 caracteres), "
-                "igual que en las observaciones internas.",
+                "El comentario de uso interno es obligatorio (al menos 10 caracteres).",
                 "danger",
             )
             return redirect(url_for("admin_denuncias.admin_detalle", did=did))
@@ -1368,6 +1418,8 @@ def register_admin_routes(bp):
         uid_act = int(session["uid"])
         area_ref_obs = session.get("area_id") or doc.get("area_id")
         estado_ant = doc["estado"]
+
+        responsable_anterior = doc.get("usuario_asignado_id")
 
         try:
             if tipo == "area":
@@ -1408,10 +1460,11 @@ def register_admin_routes(bp):
                     cur.execute(
                         """
                         UPDATE denuncias
-                        SET usuario_asignado_id=%s, area_id=%s, estado=%s, fecha_actualizacion=%s
+                        SET usuario_asignado_id=%s, area_id=%s, estado=%s, fecha_actualizacion=%s, 
+                            responsable_anterior_id=%s, reasignado_por_id=%s, fecha_reasignacion=%s
                         WHERE id=%s
                         """,
-                        (nu, aid, estado_sig, now_local(), did),
+                        (nu, aid, estado_sig, now_local(), responsable_anterior, uid_act, now_local(), did),
                     )
 
                 registrar_seguimiento(
@@ -1430,12 +1483,13 @@ def register_admin_routes(bp):
                 nom_area = (an or {}).get("nombre") or ("id %s" % aid)
                 obs_r = (
                     "Reasignación de expediente (perfil Responsable): queda a cargo del área «{}» "
-                    "(id {}). Responsable operativo asignado: «{}» (id {}). Código: {}."
+                    "(id {}). Responsable operativo asignado: «{}» (id {}). Responsable anterior: «{}». Código: {}."
                 ).format(
                     nom_area.strip(),
                     aid,
                     (urow.get("nombres") or "").strip(),
                     nu,
+                    (doc.get("asignado_nombres") or "Sin responsable"),
                     doc.get("codigo") or "",
                 )
                 registrar_seguimiento(
@@ -1480,10 +1534,11 @@ def register_admin_routes(bp):
                     cur.execute(
                         """
                         UPDATE denuncias
-                        SET usuario_asignado_id=%s, area_id=NULL, estado=%s, fecha_actualizacion=%s
+                        SET usuario_asignado_id=%s, area_id=NULL, estado=%s, fecha_actualizacion=%s, 
+                            responsable_anterior_id=%s, reasignado_por_id=%s, fecha_reasignacion=%s
                         WHERE id=%s
                         """,
-                        (adm_id, estado_sig, now_local(), did),
+                        (adm_id, estado_sig, now_local(), responsable_anterior, uid_act, now_local(), did),
                     )
 
                 registrar_seguimiento(
@@ -1499,10 +1554,8 @@ def register_admin_routes(bp):
                 nom_adm = (adm.get("nombres") or "").strip()
                 obs_r = (
                     "Reasignación de expediente (perfil Responsable): queda a cargo del administrador "
-                    "«{}» (id {}) para gestión institucional, cambio de estado o cierre según corresponda. "
-                    "El vínculo por área institucional se retira del expediente hasta una nueva asignación. "
-                    "Código: {}."
-                ).format(nom_adm, adm_id, doc.get("codigo") or "")
+                    "«{}» (id {}). Responsable anterior: «{}». Código: {}."
+                ).format(nom_adm, adm_id, (doc.get("asignado_nombres") or "Sin responsable"), doc.get("codigo") or "")
                 registrar_seguimiento(
                     conn,
                     did,
@@ -1520,7 +1573,7 @@ def register_admin_routes(bp):
                 )
                 return redirect(url_for("admin_denuncias.admin_lista_denuncias"))
 
-        except Exception:
+        except Exception as e:
             conn.rollback()
             flash("Error al reasignar el expediente.", "danger")
 
@@ -1530,7 +1583,6 @@ def register_admin_routes(bp):
         if estado_nuevo not in ESTADOS_PERMITIDOS:
             return False
 
-        # Cierre formal: solo Administrador (evita POST manual aunque el select esté acotado).
         if estado_nuevo == "Cerrada":
             return rol == "Administrador"
 
@@ -1592,10 +1644,8 @@ def register_admin_routes(bp):
                 observacion=texto,
                 area_id=session.get("area_id") or doc.get("area_id"),
             )
-
             conn.commit()
             flash("Registro de seguimiento agregado.", "success")
-
         except Exception:
             conn.rollback()
             flash("Error al guardar el seguimiento.", "danger")
@@ -1615,7 +1665,6 @@ def register_admin_routes(bp):
             return redirect(url_for("admin_denuncias.admin_detalle", did=did))
 
         conn = get_db()
-
         doc = cargar_denuncia_por_id(did)
 
         if not doc:
@@ -1670,7 +1719,6 @@ def register_admin_routes(bp):
                     observacion=texto if texto else None,
                     area_id=session.get("area_id") or doc.get("area_id"),
                 )
-
             conn.commit()
             flash("Estado actualizado.", "success")
         except Exception:
@@ -1803,7 +1851,6 @@ def register_admin_routes(bp):
                         """,
                         (nombre, correo, uid),
                     )
-
             conn.commit()
             flash("Usuario actualizado. Si cambió credenciales, use las nuevas al ingresar.", "success")
         except Exception:
@@ -1838,7 +1885,6 @@ def register_admin_routes(bp):
             flash("Usuario no encontrado.", "danger")
             return redirect(url_for("admin_denuncias.admin_usuarios"))
 
-        # Reactivar: sin validación adicional
         if not urow["activo"]:
             try:
                 with conn.cursor() as cur:
@@ -1850,7 +1896,6 @@ def register_admin_routes(bp):
                 flash("Error al activar el usuario.", "danger")
             return redirect(url_for("admin_denuncias.admin_usuarios"))
 
-        # Desactivar
         n_pend = contar_denuncias_abiertas_asignadas_a(conn, uid)
         rid_raw = (request.form.get("reassign_usuario_id") or "").strip()
         rid = None
@@ -1987,7 +2032,7 @@ def register_admin_routes(bp):
         conn = get_db()
         try:
             with conn.cursor() as cur:
-                cur.execute("UPDATE categorias SET activo = CASE WHEN activo=1 THEN 0 ELSE 1 END WHERE id=%s", (cid,))
+                cur.execute("UPDATE categorias SET activo = IF(activo=1,0,1) WHERE id=%s", (cid,))
             conn.commit()
             flash("Estado de categoría actualizado.", "success")
         except Exception:
@@ -2072,7 +2117,7 @@ def register_admin_routes(bp):
         conn = get_db()
         try:
             with conn.cursor() as cur:
-                cur.execute("UPDATE subcategorias SET activo = CASE WHEN activo=1 THEN 0 ELSE 1 END WHERE id=%s", (sid,))
+                cur.execute("UPDATE subcategorias SET activo = IF(activo=1,0,1) WHERE id=%s", (sid,))
             conn.commit()
             flash("Subcategoría actualizada.", "success")
         except Exception:
@@ -2327,7 +2372,7 @@ def register_admin_routes(bp):
         conn = get_db()
         try:
             with conn.cursor() as cur:
-                cur.execute("UPDATE areas SET activo = CASE WHEN activo=1 THEN 0 ELSE 1 END WHERE id=%s", (aid,))
+                cur.execute("UPDATE areas SET activo = IF(activo=1,0,1) WHERE id=%s", (aid,))
             conn.commit()
             flash("Estado del área actualizado.", "success")
         except Exception:
@@ -2362,6 +2407,165 @@ def register_admin_routes(bp):
             flash("No se pudo eliminar el área (restricción en base de datos).", "danger")
 
         return redirect(url_for("admin_denuncias.admin_areas_panel"))
+
+    @bp.route("/denuncias/<int:did>/toggle-activo", methods=["POST"])
+    @login_required
+    def admin_toggle_denuncia_activo(did):
+        """Solo Administrador puede desactivar/reactivar denuncias con comentario obligatorio."""
+        rol = obtener_rol()
+
+        if rol != "Administrador":
+            flash("No tiene permiso para realizar esta acción.", "danger")
+            return redirect(url_for("admin_denuncias.admin_detalle", did=did))
+
+        conn = get_db()
+        doc = cargar_denuncia_por_id(did)
+        if not doc:
+            abort(404)
+
+        comentario = (request.form.get("comentario_desactivacion") or "").strip()
+        nuevo_estado = 0 if doc.get("activo") == 1 else 1
+
+        if nuevo_estado == 0 and len(comentario) < 10:
+            flash("Para desactivar una denuncia debe indicar el motivo (mínimo 10 caracteres).", "danger")
+            return redirect(url_for("admin_denuncias.admin_detalle", did=did))
+
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE denuncias SET activo = %s, fecha_actualizacion = %s WHERE id = %s",
+                    (nuevo_estado, now_local(), did)
+                )
+
+            accion = "DESACTIVACION" if nuevo_estado == 0 else "REACTIVACION"
+            observacion = f"Denuncia {accion.lower()} por Administrador {session.get('nombres')}. Motivo: {comentario}"
+
+            registrar_seguimiento(
+                conn,
+                did,
+                session["uid"],
+                accion=accion,
+                estado_anterior=doc["estado"],
+                estado_nuevo=doc["estado"],
+                observacion=observacion,
+                area_id=doc.get("area_id"),
+            )
+            conn.commit()
+
+            if nuevo_estado == 0:
+                flash(f"Denuncia {doc['codigo']} desactivada correctamente.", "success")
+            else:
+                flash(f"Denuncia {doc['codigo']} reactivada correctamente.", "success")
+
+        except Exception as e:
+            conn.rollback()
+            flash("Error al cambiar el estado de la denuncia.", "danger")
+
+        return redirect(url_for("admin_denuncias.admin_detalle", did=did))
+
+    @bp.route("/denuncias/<int:did>/recuperar-mis-reasignacion", methods=["POST"])
+    @login_required
+    def admin_recuperar_mis_reasignacion(did):
+        """Permite al responsable recuperar una denuncia que él mismo reasignó por error."""
+        rol = obtener_rol()
+
+        if rol != "Responsable":
+            flash("No tiene permiso para realizar esta acción.", "danger")
+            return redirect(url_for("admin_denuncias.admin_dashboard"))
+
+        conn = get_db()
+        doc = cargar_denuncia_por_id(did)
+        if not doc:
+            abort(404)
+
+        if doc.get("reasignado_por_id") != session["uid"]:
+            flash("Solo puede recuperar denuncias que usted mismo reasignó.", "danger")
+            return redirect(url_for("admin_denuncias.admin_mis_reasignaciones"))
+
+        responsable_anterior = doc.get("responsable_anterior_id")
+        if not responsable_anterior:
+            flash("No hay un responsable anterior para recuperar.", "warning")
+            return redirect(url_for("admin_denuncias.admin_mis_reasignaciones"))
+
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, nombres, area_id FROM usuarios WHERE id=%s AND activo=1",
+                (responsable_anterior,)
+            )
+            anterior = cur.fetchone()
+
+        if not anterior:
+            flash("El responsable anterior ya no está activo. No se puede recuperar.", "danger")
+            return redirect(url_for("admin_denuncias.admin_mis_reasignaciones"))
+
+        comentario = request.form.get("comentario_recuperacion") or "Recuperación por error en reasignación"
+
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE denuncias
+                    SET usuario_asignado_id=%s, area_id=%s, fecha_actualizacion=%s, 
+                        responsable_anterior_id=NULL, reasignado_por_id=NULL, fecha_reasignacion=NULL
+                    WHERE id=%s
+                    """,
+                    (anterior["id"], anterior["area_id"], now_local(), did),
+                )
+
+            registrar_seguimiento(
+                conn,
+                did,
+                session["uid"],
+                accion="RECUPERACION_MIS_REASIGNACION",
+                estado_anterior=doc["estado"],
+                estado_nuevo=doc["estado"],
+                observacion=f"El responsable recuperó la denuncia que había reasignado. Motivo: {comentario}",
+                area_id=anterior["area_id"],
+            )
+            conn.commit()
+
+            flash(f"✅ Ha recuperado la denuncia. Ahora está nuevamente a su cargo.", "success")
+
+        except Exception as e:
+            conn.rollback()
+            flash("Error al recuperar la denuncia.", "danger")
+
+        return redirect(url_for("admin_denuncias.admin_mis_reasignaciones"))
+
+    @bp.route("/mis-reasignaciones")
+    @login_required
+    def admin_mis_reasignaciones():
+        """Bandeja de denuncias que el responsable reasignó recientemente (últimas 48 horas)."""
+        rol = obtener_rol()
+
+        if rol != "Responsable":
+            flash("No tiene permiso para acceder.", "danger")
+            return redirect(url_for("admin_denuncias.admin_dashboard"))
+
+        conn = get_db()
+        uid = session["uid"]
+
+        sql = """
+            SELECT d.id, d.codigo, d.categoria, d.subcategoria, d.estado, d.prioridad,
+                d.fecha_reasignacion, u.nombres AS reasignado_a,
+                d.fecha_creacion
+            FROM denuncias d
+            LEFT JOIN usuarios u ON u.id = d.usuario_asignado_id
+            WHERE d.reasignado_por_id = %s 
+            AND d.fecha_reasignacion > DATE_SUB(NOW(), INTERVAL 48 HOUR)
+            AND d.responsable_anterior_id IS NOT NULL
+            ORDER BY d.fecha_reasignacion DESC
+        """
+
+        with conn.cursor() as cur:
+            cur.execute(sql, (uid,))
+            reasignaciones = cur.fetchall()
+
+        return render_template(
+            "admin/mis_reasignaciones.html",
+            reasignaciones=reasignaciones,
+            tiene_registros=len(reasignaciones) > 0
+        )
 
     @bp.route("/reportes")
     @login_required
@@ -2444,7 +2648,6 @@ def register_admin_routes(bp):
         def as_date(v):
             if v is None:
                 return ""
-
             try:
                 if isinstance(v, str):
                     return v[:19]
