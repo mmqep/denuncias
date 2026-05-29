@@ -1100,3 +1100,109 @@ body.mmq-modal-open {
   justify-content: space-between;
   align-items: center;
 }
+
+/* ============================================
+   RESPONSIVE: Stepper vertical en móvil
+   ============================================ */
+
+/* En móvil, convertir el stepper a horizontal con scroll */
+@media (max-width: 768px) {
+    .form-layout {
+        display: block !important;
+    }
+    
+    .form-sidebar {
+        width: 100% !important;
+        margin-bottom: 1.5rem;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    .steps-vertical {
+        display: flex !important;
+        flex-direction: row !important;
+        gap: 0.5rem;
+        padding: 0.5rem 0;
+        min-width: min-content;
+        list-style: none;
+        margin: 0;
+    }
+    
+    .steps-vertical li {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        text-align: center;
+        min-width: 70px;
+        padding: 0.5rem 0.25rem;
+        border-radius: 8px;
+        cursor: pointer;
+    }
+    
+    .steps-vertical li .step-number {
+        margin-bottom: 0.35rem;
+    }
+    
+    .steps-vertical li .step-label {
+        font-size: 0.65rem;
+        font-weight: 500;
+        white-space: normal;
+        word-break: keep-all;
+        line-height: 1.25;
+    }
+    
+    /* Versión más compacta para pantallas muy pequeñas */
+    @media (max-width: 480px) {
+        .steps-vertical li {
+            min-width: 55px;
+        }
+        .steps-vertical li .step-label {
+            font-size: 0.55rem;
+        }
+        .steps-vertical li .step-number {
+            width: 28px;
+            height: 28px;
+            font-size: 0.75rem;
+        }
+    }
+}
+
+/* Desktop: mantener el stepper vertical original */
+@media (min-width: 769px) {
+    .form-layout {
+        display: grid;
+        grid-template-columns: 260px 1fr;
+        gap: 2rem;
+        align-items: start;
+    }
+    
+    .steps-vertical {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+    
+    .steps-vertical li {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+    
+    .steps-vertical li .step-number {
+        width: 34px;
+        height: 34px;
+        font-size: 0.9rem;
+    }
+    
+    .steps-vertical li .step-label {
+        font-size: 0.9rem;
+        font-weight: 500;
+    }
+}
