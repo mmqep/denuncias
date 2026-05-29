@@ -5,289 +5,513 @@
 
 {% set anon = d.es_anonima %}
 
-<div class="grid-two">
-  <div class="card form-card stack-form">
-    <h2 class="card-title">Resumen del caso</h2>
-    <dl class="kv">
-      <dt>Estado</dt><dd><span class="badge badge-estado">{{ d.estado }}</span></dd>
-      <dt>Prioridad</dt><dd><span class="badge">{{ d.prioridad }}</span></dd>
-      <dt>Registro</dt><dd>{% if anon %}Anónimo{% else %}Con datos del denunciante{% endif %}</dd>
-      <dt>Categoría</dt><dd>{{ d.categoria }}</dd>
-      <dt>Subcategoría</dt><dd>{{ d.subcategoria }}</dd>
-      <dt>Área institucional</dt><dd>{{ d.area_nombre or 'Sin asignar' }}{% if d.area_contacto_nombre %}<br><span class="muted">{{ d.area_contacto_nombre }}</span>{% endif %}</dd>
-      <dt>Ubicación</dt><dd>{{ d.ubicacion or '—' }}</dd>
-      <dt>Fecha del hecho</dt><dd>{{ d.fecha_hecho or '—' }}</dd>
-      <dt>Hora del hecho</dt><dd>{{ d.hora_hecho or '—' }}</dd>
-      <dt>Involucrado(s)</dt><dd>{{ d.involucrado or '—' }}</dd>
-      <dt>Responsable</dt><dd>{{ d.asignado_nombres or 'Sin asignar' }}</dd>
-      <dt>Registro público</dt><dd>{{ d.fecha_creacion }}</dd>
-      <dt>Última actualización</dt><dd>{{ d.fecha_actualizacion or '—' }}</dd>
-      <dt>Fecha de cierre</dt><dd>{{ d.fecha_cierre or '—' }}</dd>
-    </dl>
+<div class="form-layout">
+  
+  <!-- Barra lateral izquierda (pasos verticales) -->
+  <div class="form-sidebar">
+    <ul class="steps-vertical" id="stepsVertical">
+      <li data-step="1" class="active">
+        <span class="step-number">1</span>
+        <span class="step-label">Resumen del Caso</span>
+      </li>
+      <li data-step="2">
+        <span class="step-number">2</span>
+        <span class="step-label">Datos del Denunciante</span>
+      </li>
+      <li data-step="3">
+        <span class="step-number">3</span>
+        <span class="step-label">Ubicación</span>
+      </li>
+      <li data-step="4">
+        <span class="step-number">4</span>
+        <span class="step-label">Detalle y Evidencias</span>
+      </li>
+      <li data-step="5">
+        <span class="step-number">5</span>
+        <span class="step-label">Gestión del Expediente</span>
+      </li>
+      <li data-step="6">
+        <span class="step-number">6</span>
+        <span class="step-label">Seguimiento y Estado</span>
+      </li>
+      <li data-step="7">
+        <span class="step-number">7</span>
+        <span class="step-label">Historial</span>
+      </li>
+    </ul>
   </div>
 
-  {% if anon %}
-  <div class="card anon-banner">
-    <p><strong>Denuncia anónima:</strong> no se exponen datos personales del ciudadano fuera del flujo institucional restringido.</p>
-  </div>
-  {% else %}
-  <div class="card form-card stack-form">
-    <h2 class="card-title">Datos del denunciante</h2>
-    <dl class="kv">
-      <dt>Nombre</dt><dd>{{ d.nombres_denunciante or '—' }}</dd>
-      <dt>Identificación</dt><dd>{{ d.identificacion_denunciante or '—' }}</dd>
-      <dt>Teléfono</dt><dd>{{ d.telefono_denunciante or '—' }}</dd>
-      <dt>Correo</dt><dd>{{ d.correo_denunciante or '—' }}</dd>
-    </dl>
-  </div>
-  {% endif %}
-</div>
-
-{% if rol == 'Administrador' %}
-<div class="card form-card spacing-top">
-  <h2 class="card-title">Reportes PDF del expediente</h2>
-  <p class="hint"><strong>Interno:</strong> toda la trazabilidad del sistema. <strong>Externo:</strong> únicamente las líneas registradas como «gestión realizada ante el ciudadano», aptas para compartir sin notas internas.</p>
-  <div class="btn-row">
-    <a class="btn btn-outline" href="{{ url_for('admin_denuncias.admin_reporte_denuncia_interno_pdf', did=d.id) }}">Descargar reporte interno</a>
-    <a class="btn btn-accent" href="{{ url_for('admin_denuncias.admin_reporte_denuncia_externo_pdf', did=d.id) }}">Descargar reporte externo</a>
-  </div>
-</div>
-{% endif %}
-
-<div class="card form-card spacing-top">
-  <h2 class="card-title">Descripción</h2>
-  <p class="preserve">{{ d.descripcion }}</p>
-</div>
-
-<div class="card form-card spacing-top">
-  <h2 class="card-title">Evidencias adjuntas</h2>
-  {% if archivos and archivos|length %}
-  <ul class="file-links">
-    {% for a in archivos %}
-    <li>
-      <a href="{{ url_for('static', filename='uploads/' ~ (a.ruta or a.nombre_guardado)) }}" target="_blank" rel="noopener">{{ a.nombre_original }}</a>
-      <span class="muted">{{ (a.tamano ~ ' bytes') if a.tamano else '' }}</span>
-    </li>
-    {% endfor %}
-  </ul>
-  {% else %}
-  <p class="muted">No hay adjuntos registrados.</p>
-  {% endif %}
-</div>
-
-{% if rol == 'Administrador' %}
-<form class="card form-card spacing-top" method="post" action="{{ url_for('admin_denuncias.admin_asignar', did=d.id) }}">
-  <h2 class="card-title">Asignar o reasignar área</h2>
-  <p class="hint">La denuncia se enruta al <strong>único usuario Responsable</strong> vinculado al área. Si cambia personal, actualice ese usuario en «Usuarios»; el expediente conserva el historial ligado al área.</p>
-  <label>Área institucional <span class="req">*</span>
-    <select name="area_id" required>
-      <option value="">— Elija —</option>
-      {% for ar in areas_asignacion %}
-      <option value="{{ ar.id }}" {{ 'selected' if d.area_id == ar.id }}>
-        {{ ar.nombre }}
-        {% if ar.contacto_nombre %} · {{ ar.contacto_nombre }}{% endif %}
-      </option>
-      {% endfor %}
-    </select>
-  </label>
-  <div class="form-actions"><button type="submit" class="btn btn-accent">Guardar asignación por área</button></div>
-</form>
-{% endif %}
-
-{% if rol == 'Responsable' and d.estado not in ['Cerrada', 'Archivada / No procedente'] %}
-  {% if reasign_areas or reasign_admins %}
-  <form id="form-reasign-resp" class="card form-card spacing-top stack-form" method="post" action="{{ url_for('admin_denuncias.admin_reasignar_por_responsable', did=d.id) }}">
-    <h2 class="card-title">Reasignar expediente</h2>
-    <p class="hint">Use esta opción cuando otra área deba intervenir en el mismo expediente o cuando deba pasar a <strong>Administración</strong> para cierre o cambio de estado. El comentario obligatorio queda solo como <strong>observación interna</strong> (no es gestión publicable al ciudadano).</p>
-
-    <label>Motivo y contexto (uso interno, obligatorio) <span class="req">*</span>
-      <textarea name="comentario_reasignacion_interno" rows="4" required minlength="10" maxlength="12000" placeholder="Ej.: Se requiere inspección conjunta; se deriva a Jefatura para definición de competencia; solicito cierre administrativo…"></textarea>
-    </label>
-
-    {% if reasign_areas and reasign_admins %}
-    <div class="stack-form subcard">
-      <p class="subsection">Destino</p>
-      <label><input type="radio" name="tipo_destino_reasignacion" value="area" checked> Otra área institucional (quedará asignada al responsable de esa área)</label>
-      <label><input type="radio" name="tipo_destino_reasignacion" value="administrador"> Un administrador (gestión, cambio de estado o cierre)</label>
+  <!-- Contenido derecho -->
+  <div class="form-content">
+    
+    <!-- Paso 1: Resumen del Caso -->
+    <div class="step-panel active-panel" data-step="1">
+      <h2 class="panel-title">1. Resumen del Caso</h2>
+      <dl class="kv">
+        <dt>Estado</dt><dd><span class="badge badge-estado">{{ d.estado }}</span></dd>
+        <dt>Prioridad</dt><dd><span class="badge">{{ d.prioridad }}</span></dd>
+        <dt>Registro</dt><dd>{% if anon %}Anónimo{% else %}Con datos del denunciante{% endif %}</dd>
+        <dt>Categoría</dt><dd>{{ d.categoria }}</dd>
+        <dt>Subcategoría</dt><dd>{{ d.subcategoria }}</dd>
+        <dt>Área institucional</dt><dd>{{ d.area_nombre or 'Sin asignar' }}{% if d.area_contacto_nombre %}<br><span class="muted">{{ d.area_contacto_nombre }}</span>{% endif %}</dd>
+        <dt>Ubicación</dt><dd>{{ d.ubicacion or '—' }}</dd>
+        <dt>Fecha del hecho</dt><dd>{{ d.fecha_hecho or '—' }}</dd>
+        <dt>Hora del hecho</dt><dd>{{ d.hora_hecho or '—' }}</dd>
+        <dt>Involucrado(s)</dt><dd>{{ d.involucrado or '—' }}</dd>
+        <dt>Responsable asignado</dt><dd>{{ d.asignado_nombres or 'Sin asignar' }}</dd>
+        <dt>Registro público</dt><dd>{{ d.fecha_creacion }}</dd>
+        <dt>Última actualización</dt><dd>{{ d.fecha_actualizacion or '—' }}</dd>
+        <dt>Fecha de cierre</dt><dd>{{ d.fecha_cierre or '—' }}</dd>
+      </dl>
     </div>
-    <div id="reasign-panel-area" class="reasign-dest-panel">
-      <label>Área de destino <span class="req">*</span>
-        <select name="area_destino_id" id="sel-area-reasign">
-          <option value="">— Elija área —</option>
-          {% for ar in reasign_areas %}
-          <option value="{{ ar.id }}">{{ ar.nombre }}{% if ar.contacto_nombre %} · {{ ar.contacto_nombre }}{% endif %}</option>
-          {% endfor %}
-        </select>
-      </label>
-    </div>
-    <div id="reasign-panel-admin" class="reasign-dest-panel" hidden>
-      <label>Administrador de destino <span class="req">*</span>
-        <select name="admin_destino_id" id="sel-admin-reasign">
-          <option value="">— Elija administrador —</option>
-          {% for ad in reasign_admins %}
-          <option value="{{ ad.id }}">{{ ad.nombres }} · {{ ad.correo }}</option>
-          {% endfor %}
-        </select>
-      </label>
-    </div>
-    {% elif reasign_areas %}
-    <input type="hidden" name="tipo_destino_reasignacion" value="area">
-    <label>Área de destino <span class="req">*</span>
-      <select name="area_destino_id" required id="sel-area-reasign">
-        <option value="">— Elija —</option>
-        {% for ar in reasign_areas %}
-        <option value="{{ ar.id }}">{{ ar.nombre }}{% if ar.contacto_nombre %} · {{ ar.contacto_nombre }}{% endif %}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <input type="hidden" name="admin_destino_id" value="">
-    {% else %}
-    <input type="hidden" name="tipo_destino_reasignacion" value="administrador">
-    <label>Administrador de destino <span class="req">*</span>
-      <select name="admin_destino_id" required id="sel-admin-reasign">
-        <option value="">— Elija —</option>
-        {% for ad in reasign_admins %}
-        <option value="{{ ad.id }}">{{ ad.nombres }} · {{ ad.correo }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <input type="hidden" name="area_destino_id" value="">
-    {% endif %}
 
-    <div class="form-actions">
-      <button type="submit" class="btn btn-accent">Confirmar reasignación</button>
-    </div>
-  </form>
-  {% if reasign_areas and reasign_admins %}
-  <script>
-  (function () {
-    var form = document.getElementById("form-reasign-resp");
-    if (!form) return;
-    var rArea = form.querySelector('input[name="tipo_destino_reasignacion"][value="area"]');
-    var rAdm = form.querySelector('input[name="tipo_destino_reasignacion"][value="administrador"]');
-    var panelA = document.getElementById("reasign-panel-area");
-    var panelB = document.getElementById("reasign-panel-admin");
-    var selA = form.querySelector('[name="area_destino_id"]');
-    var selB = form.querySelector('[name="admin_destino_id"]');
-    if (!rArea || !rAdm || !panelA || !panelB || !selA || !selB) return;
-
-    function sync() {
-      var toArea = rArea.checked;
-      panelA.hidden = !toArea;
-      panelB.hidden = toArea;
-      if (toArea) {
-        selA.disabled = false;
-        selA.required = true;
-        selB.disabled = true;
-        selB.required = false;
-        selB.selectedIndex = 0;
-      } else {
-        selA.disabled = true;
-        selA.required = false;
-        selA.selectedIndex = 0;
-        selB.disabled = false;
-        selB.required = true;
-      }
-    }
-    rArea.addEventListener("change", sync);
-    rAdm.addEventListener("change", sync);
-    sync();
-  })();
-  </script>
-  {% endif %}
-  {% else %}
-  <div class="card form-card spacing-top">
-    <h2 class="card-title">Reasignar expediente</h2>
-    <p class="muted">No hay ahora mismo otra área con responsable activo ni administradores activos a los que pueda transferir este expediente. Si necesita coordinación, contacte a administración del sistema.</p>
-  </div>
-  {% endif %}
-{% endif %}
-
-{% if rol != 'Consulta' %}
-<div class="card form-card spacing-top">
-  <h2 class="card-title">Registro institucional</h2>
-
-  <form method="post" action="{{ url_for('admin_denuncias.admin_seguimiento', did=d.id) }}" class="stack-form subcard">
-    <h3 class="subsection">Observación interna</h3>
-    <input type="hidden" name="tipo_gestion" value="observacion">
-    <label>Observación (solo personal interno)<textarea name="texto_seguimiento" rows="3" placeholder="Use este campo solo para notas de uso institucional."></textarea></label>
-    <button type="submit" class="btn btn-outline btn-small">Guardar observación</button>
-  </form>
-
-  <form method="post" action="{{ url_for('admin_denuncias.admin_seguimiento', did=d.id) }}" class="stack-form subcard">
-    <h3 class="subsection">Gestión realizada ante el ciudadano</h3>
-    <input type="hidden" name="tipo_gestion" value="gestion">
-    <label>Describe la gestión pública efectuada<textarea name="texto_seguimiento" rows="3" placeholder="Acciones comunicadas al denunciante, visitas insitu, llamadas…"></textarea></label>
-    <button type="submit" class="btn btn-accent btn-small">Registrar gestión</button>
-  </form>
-</div>
-
-<div class="card form-card spacing-top">
-  <h2 class="card-title">Estado del expediente</h2>
-  <form method="post" action="{{ url_for('admin_denuncias.admin_cambia_estado', did=d.id) }}" class="stack-form">
-    <label>Nuevo estado
-      {% if rol == 'Administrador' %}
-      <select name="estado" required>
-        {% for e in estados_permitidos %}
-        <option value="{{ e }}" {% if d.estado == e %}selected{% endif %}>{{ e }}</option>
-        {% endfor %}
-      </select>
+    <!-- Paso 2: Datos del Denunciante -->
+    <div class="step-panel" data-step="2">
+      <h2 class="panel-title">2. Datos del Denunciante</h2>
+      {% if anon %}
+      <div class="card anon-banner">
+        <p><strong>Denuncia anónima:</strong> no se exponen datos personales del ciudadano fuera del flujo institucional restringido.</p>
+      </div>
       {% else %}
-      <select name="estado" required>
-        <option value="" disabled>Elija transición</option>
-        <option value="En atención">En atención</option>
-        <option value="Solucionada">Solucionada</option>
-      </select>
-      {% endif %}
-    </label>
-    <label>Nota (opcional, queda registrada en historial)<textarea name="nota_estado" rows="2"></textarea></label>
-    <div class="btn-row">
-      <button type="submit" class="btn btn-primary">Cambiar estado</button>
-      {% if rol == 'Administrador' %}
-      <span class="hint-inline">Para <strong>cierre formal</strong> seleccione «Cerrada» (solo su perfil puede aplicarlo).</span>
-      {% else %}
-      <span class="hint-inline">El cierre formal del expediente («Cerrada») lo aplica un usuario con perfil <strong>Administrador</strong>.</span>
+      <dl class="kv">
+        <dt>Nombre completo</dt><dd>{{ d.nombres_denunciante or '—' }}</dd>
+        <dt>Identificación (Cédula/RUC)</dt><dd>{{ d.identificacion_denunciante or '—' }}</dd>
+        <dt>Teléfono</dt><dd>{{ d.telefono_denunciante or '—' }}</dd>
+        <dt>Correo electrónico</dt><dd>{{ d.correo_denunciante or '—' }}</dd>
+      </dl>
       {% endif %}
     </div>
-  </form>
-</div>
-{% else %}
-<p class="muted spacing-top"><strong>Rol Consulta:</strong> sólo puede visualizar el expediente y los reportes.</p>
-{% endif %}
 
-<div class="card table-card spacing-top">
-  <h2 class="card-title">Historial de acciones</h2>
-  <div class="table-wrap scroll-x">
-    <table class="data-table striped small">
-      <thead>
-        <tr>
-          <th>Fecha</th>
-          <th>Usuario</th>
-          <th>Área ref.</th>
-          <th>Acción</th>
-          <th>Cambios de estado</th>
-          <th>Observaciones</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for h in historial %}
-        <tr>
-          <td>{{ h.fecha_creacion }}</td>
-          <td>{{ h.usuario_evento_nombre or 'Canal público' }}</td>
-          <td class="wrap-cell muted">{{ h.area_evento_nombre or '—' }}</td>
-          <td><code>{{ h.accion }}</code></td>
-          <td>{{ h.estado_anterior or '' }}{% if h.estado_nuevo %} → {{ h.estado_nuevo }}{% endif %}</td>
-          <td class="wrap-cell">{{ h.observacion or '—' }}</td>
-        </tr>
+    <!-- Paso 3: Ubicación -->
+    <div class="step-panel" data-step="3">
+      <h2 class="panel-title">3. Ubicación del Hecho</h2>
+      <p><strong>Dirección / referencia:</strong> {{ d.ubicacion or 'No especificada' }}</p>
+      {% if d.latitud and d.longitud %}
+      <div id="mapa-denuncia" style="height: 350px; width: 100%; border-radius: 8px; border: 1px solid #ddd; margin-top: 15px;"></div>
+      <p class="coordenadas-info" style="margin-top: 10px;">
+        <strong>Coordenadas:</strong> {{ d.latitud }}, {{ d.longitud }}
+      </p>
+      {% else %}
+      <p class="muted">No hay coordenadas registradas en el mapa.</p>
+      {% endif %}
+    </div>
+
+    <!-- Paso 4: Detalle y Evidencias -->
+    <div class="step-panel" data-step="4">
+      <h2 class="panel-title">4. Detalle y Evidencias</h2>
+      <div class="card form-card spacing-top" style="margin-top: 0;">
+        <h3 class="card-title">Descripción del hecho</h3>
+        <p class="preserve">{{ d.descripcion }}</p>
+      </div>
+      <div class="card form-card spacing-top">
+        <h3 class="card-title">Evidencias adjuntas</h3>
+        {% if archivos and archivos|length %}
+        <ul class="file-links">
+          {% for a in archivos %}
+          <li><a href="{{ a.url_temporal }}" target="_blank" rel="noopener">{{ a.nombre_original }}</a></li>
+          {% endfor %}
+        </ul>
         {% else %}
-        <tr><td colspan="6" class="muted">Sin registros.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+        <p class="muted">No hay adjuntos registrados.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Paso 5: Gestión del Expediente -->
+    <div class="step-panel" data-step="5">
+      <h2 class="panel-title">5. Gestión del Expediente</h2>
+      
+      {% if rol == 'Administrador' %}
+      <!-- Asignar área (solo Administrador) -->
+      <div class="card form-card spacing-top" style="margin-top: 0;">
+        <h3 class="card-title">Asignar o reasignar área</h3>
+        <p class="hint">La denuncia se enruta al <strong>único usuario Responsable</strong> vinculado al área.</p>
+        <form method="post" action="{{ url_for('admin_denuncias.admin_asignar', did=d.id) }}">
+          <label>Área institucional <span class="req">*</span>
+            <select name="area_id" required>
+              <option value="">— Elija —</option>
+              {% for ar in areas_asignacion %}
+              <option value="{{ ar.id }}" {{ 'selected' if d.area_id == ar.id }}>
+                {{ ar.nombre }}
+                {% if ar.contacto_nombre %} · {{ ar.contacto_nombre }}{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </label>
+          <div class="form-actions"><button type="submit" class="btn btn-accent">Guardar asignación por área</button></div>
+        </form>
+      </div>
+      {% endif %}
+
+      {% if rol == 'Responsable' and d.estado not in ['Cerrada', 'Archivada / No procedente'] %}
+      <!-- Reasignar expediente (solo Responsable) -->
+      <div class="card form-card spacing-top">
+        <h3 class="card-title">Reasignar expediente</h3>
+        <p class="hint">Use esta opción cuando otra área deba intervenir en el mismo expediente.</p>
+        
+        {% if reasign_areas or reasign_admins %}
+        <form id="form-reasign-resp" method="post" action="{{ url_for('admin_denuncias.admin_reasignar_por_responsable', did=d.id) }}">
+          <label>Motivo y contexto (uso interno, obligatorio) <span class="req">*</span>
+            <textarea name="comentario_reasignacion_interno" rows="4" required minlength="10" maxlength="12000" placeholder="Ej.: Se requiere inspección conjunta; se deriva a Jefatura para definición de competencia; solicito cierre administrativo…"></textarea>
+          </label>
+
+          {% if reasign_areas and reasign_admins %}
+          <div class="stack-form subcard">
+            <p class="subsection">Destino</p>
+            <label><input type="radio" name="tipo_destino_reasignacion" value="area" checked> Otra área institucional</label>
+            <label><input type="radio" name="tipo_destino_reasignacion" value="administrador"> Un administrador</label>
+          </div>
+          <div id="reasign-panel-area" class="reasign-dest-panel">
+            <label>Área de destino <span class="req">*</span>
+              <select name="area_destino_id" id="sel-area-reasign">
+                <option value="">— Elija área —</option>
+                {% for ar in reasign_areas %}
+                <option value="{{ ar.id }}">{{ ar.nombre }}{% if ar.contacto_nombre %} · {{ ar.contacto_nombre }}{% endif %}</option>
+                {% endfor %}
+              </select>
+            </label>
+          </div>
+          <div id="reasign-panel-admin" class="reasign-dest-panel" hidden>
+            <label>Administrador de destino <span class="req">*</span>
+              <select name="admin_destino_id" id="sel-admin-reasign">
+                <option value="">— Elija administrador —</option>
+                {% for ad in reasign_admins %}
+                <option value="{{ ad.id }}">{{ ad.nombres }} · {{ ad.correo }}</option>
+                {% endfor %}
+              </select>
+            </label>
+          </div>
+          {% elif reasign_areas %}
+          <input type="hidden" name="tipo_destino_reasignacion" value="area">
+          <label>Área de destino <span class="req">*</span>
+            <select name="area_destino_id" required id="sel-area-reasign">
+              <option value="">— Elija —</option>
+              {% for ar in reasign_areas %}
+              <option value="{{ ar.id }}">{{ ar.nombre }}{% if ar.contacto_nombre %} · {{ ar.contacto_nombre }}{% endif %}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <input type="hidden" name="admin_destino_id" value="">
+          {% else %}
+          <input type="hidden" name="tipo_destino_reasignacion" value="administrador">
+          <label>Administrador de destino <span class="req">*</span>
+            <select name="admin_destino_id" required id="sel-admin-reasign">
+              <option value="">— Elija —</option>
+              {% for ad in reasign_admins %}
+              <option value="{{ ad.id }}">{{ ad.nombres }} · {{ ad.correo }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <input type="hidden" name="area_destino_id" value="">
+          {% endif %}
+
+          <div class="form-actions">
+            <button type="submit" class="btn btn-accent">Confirmar reasignación</button>
+          </div>
+        </form>
+        {% if reasign_areas and reasign_admins %}
+        <script>
+        (function () {
+          var form = document.getElementById("form-reasign-resp");
+          if (!form) return;
+          var rArea = form.querySelector('input[name="tipo_destino_reasignacion"][value="area"]');
+          var rAdm = form.querySelector('input[name="tipo_destino_reasignacion"][value="administrador"]');
+          var panelA = document.getElementById("reasign-panel-area");
+          var panelB = document.getElementById("reasign-panel-admin");
+          var selA = form.querySelector('[name="area_destino_id"]');
+          var selB = form.querySelector('[name="admin_destino_id"]');
+          if (!rArea || !rAdm || !panelA || !panelB || !selA || !selB) return;
+
+          function sync() {
+            var toArea = rArea.checked;
+            panelA.hidden = !toArea;
+            panelB.hidden = toArea;
+            if (toArea) {
+              selA.disabled = false;
+              selA.required = true;
+              selB.disabled = true;
+              selB.required = false;
+              selB.selectedIndex = 0;
+            } else {
+              selA.disabled = true;
+              selA.required = false;
+              selA.selectedIndex = 0;
+              selB.disabled = false;
+              selB.required = true;
+            }
+          }
+          rArea.addEventListener("change", sync);
+          rAdm.addEventListener("change", sync);
+          sync();
+        })();
+        </script>
+        {% endif %}
+        {% else %}
+        <p class="muted">No hay ahora mismo otra área con responsable activo ni administradores activos a los que pueda transferir este expediente.</p>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {% if rol == 'Administrador' %}
+      <!-- Reportes PDF (solo Administrador) -->
+      <div class="card form-card spacing-top">
+        <h3 class="card-title">Reportes PDF</h3>
+        <p class="hint"><strong>Interno:</strong> toda la trazabilidad del sistema. <strong>Externo:</strong> únicamente las líneas registradas como «gestión realizada ante el ciudadano».</p>
+        <div class="btn-row">
+          <a class="btn btn-outline" href="{{ url_for('admin_denuncias.admin_reporte_denuncia_interno_pdf', did=d.id) }}">Reporte interno</a>
+          <a class="btn btn-accent" href="{{ url_for('admin_denuncias.admin_reporte_denuncia_externo_pdf', did=d.id) }}">Reporte externo</a>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Paso 6: Seguimiento y Estado -->
+    <div class="step-panel" data-step="6">
+      <h2 class="panel-title">6. Seguimiento y Estado del Expediente</h2>
+      
+      {% if rol != 'Consulta' %}
+      <!-- Registro institucional -->
+      <div class="card form-card spacing-top" style="margin-top: 0;">
+        <h3 class="card-title">Registro institucional</h3>
+        
+        <form method="post" action="{{ url_for('admin_denuncias.admin_seguimiento', did=d.id) }}" class="stack-form subcard">
+          <h4 class="subsection">Observación interna</h4>
+          <input type="hidden" name="tipo_gestion" value="observacion">
+          <label>Observación (solo personal interno)<textarea name="texto_seguimiento" rows="3" placeholder="Use este campo solo para notas de uso institucional."></textarea></label>
+          <button type="submit" class="btn btn-outline btn-small">Guardar observación</button>
+        </form>
+
+        <form method="post" action="{{ url_for('admin_denuncias.admin_seguimiento', did=d.id) }}" class="stack-form subcard">
+          <h4 class="subsection">Gestión realizada ante el ciudadano</h4>
+          <input type="hidden" name="tipo_gestion" value="gestion">
+          <label>Describe la gestión pública efectuada<textarea name="texto_seguimiento" rows="3" placeholder="Acciones comunicadas al denunciante, visitas insitu, llamadas…"></textarea></label>
+          <button type="submit" class="btn btn-accent btn-small">Registrar gestión</button>
+        </form>
+      </div>
+
+      <!-- Cambiar estado -->
+      <div class="card form-card spacing-top">
+        <h3 class="card-title">Estado del expediente</h3>
+        <form method="post" action="{{ url_for('admin_denuncias.admin_cambia_estado', did=d.id) }}" class="stack-form">
+          <label>Nuevo estado
+            {% if rol == 'Administrador' %}
+            <select name="estado" required>
+              {% for e in estados_permitidos %}
+              <option value="{{ e }}" {% if d.estado == e %}selected{% endif %}>{{ e }}</option>
+              {% endfor %}
+            </select>
+            {% else %}
+            <select name="estado" required>
+              <option value="" disabled>Elija transición</option>
+              <option value="En atención">En atención</option>
+              <option value="Solucionada">Solucionada</option>
+            </select>
+            {% endif %}
+          </label>
+          <label>Nota (opcional, queda registrada en historial)<textarea name="nota_estado" rows="2"></textarea></label>
+          <div class="btn-row">
+            <button type="submit" class="btn btn-primary">Cambiar estado</button>
+            {% if rol == 'Administrador' %}
+            <span class="hint-inline">Para <strong>cierre formal</strong> seleccione «Cerrada» (solo su perfil puede aplicarlo).</span>
+            {% else %}
+            <span class="hint-inline">El cierre formal del expediente («Cerrada») lo aplica un usuario con perfil <strong>Administrador</strong>.</span>
+            {% endif %}
+          </div>
+        </form>
+      </div>
+      {% else %}
+      <p class="muted spacing-top"><strong>Rol Consulta:</strong> sólo puede visualizar el expediente y los reportes.</p>
+      {% endif %}
+    </div>
+
+    <!-- Paso 7: Historial -->
+    <div class="step-panel" data-step="7">
+      <h2 class="panel-title">7. Historial de Acciones</h2>
+      <div class="table-wrap scroll-x">
+        <table class="data-table striped small">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Usuario</th>
+              <th>Área ref.</th>
+              <th>Acción</th>
+              <th>Cambios de estado</th>
+              <th>Observaciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for h in historial %}
+            <tr>
+              <td>{{ h.fecha_creacion }}</td>
+              <td>{{ h.usuario_evento_nombre or 'Canal público' }}</td>
+              <td class="wrap-cell muted">{{ h.area_evento_nombre or '—' }}</td>
+              <td><code>{{ h.accion }}</code></td>
+              <td>{{ h.estado_anterior or '' }}{% if h.estado_nuevo %} → {{ h.estado_nuevo }}{% endif %}</td>
+              <td class="wrap-cell">{{ h.observacion or '—' }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="muted">Sin registros. Nonfiction</td>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Botones de navegación -->
+    <div class="nav-buttons">
+      <button type="button" class="btn btn-outline" id="prevBtn">← Anterior</button>
+      <button type="button" class="btn btn-primary" id="nextBtn">Siguiente →</button>
+    </div>
+
   </div>
 </div>
 
-<div class="form-actions spacing-top">
+<script>
+// Control del stepper vertical
+let currentStep = 1;
+const totalSteps = 7;
+let mapaInicializado = false;
+
+function initMapaDenuncia() {
+    if (mapaInicializado) {
+        // Si ya está inicializado, solo redimensionar
+        if (window.mapaDenuncia) {
+            setTimeout(function() {
+                window.mapaDenuncia.invalidateSize();
+            }, 100);
+        }
+        return;
+    }
+    
+    var mapContainer = document.getElementById('mapa-denuncia');
+    if (!mapContainer) return;
+    
+    if (typeof L !== 'undefined') {
+        var lat = parseFloat('{{ d.latitud }}');
+        var lng = parseFloat('{{ d.longitud }}');
+        
+        if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+            var limitesMercado = L.latLngBounds(
+                L.latLng(-0.273105, -78.536825),
+                L.latLng(-0.269782, -78.532781)
+            );
+            
+            window.mapaDenuncia = L.map('mapa-denuncia', {
+                center: [lat, lng],
+                zoom: 17,
+                minZoom: 16,
+                maxZoom: 19,
+                maxBounds: limitesMercado,
+                maxBoundsViscosity: 1.0,
+                zoomControl: true,
+                dragging: false,
+                scrollWheelZoom: true,
+                doubleClickZoom: false,
+                boxZoom: false,
+                keyboard: false,
+                tap: false,
+                touchZoom: true
+            });
+            
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; OpenStreetMap',
+                subdomains: 'abcd',
+                maxZoom: 19,
+                minZoom: 16
+            }).addTo(window.mapaDenuncia);
+            
+            L.marker([lat, lng]).addTo(window.mapaDenuncia)
+                .bindPopup('<b>Ubicación de la denuncia</b><br>{{ d.ubicacion or "Sin dirección adicional" }}')
+                .openPopup();
+            
+            mapaInicializado = true;
+            console.log('Mapa inicializado correctamente');
+        }
+    }
+}
+
+function updatePanels() {
+    // Actualizar clases de los pasos en la barra lateral
+    document.querySelectorAll('.steps-vertical li').forEach((step, index) => {
+        const stepNum = index + 1;
+        step.classList.remove('active', 'completed');
+        if (stepNum === currentStep) {
+            step.classList.add('active');
+        } else if (stepNum < currentStep) {
+            step.classList.add('completed');
+        }
+    });
+    
+    // Mostrar/ocultar paneles
+    document.querySelectorAll('.step-panel').forEach(panel => {
+        const panelStep = parseInt(panel.getAttribute('data-step'));
+        if (panelStep === currentStep) {
+            panel.classList.add('active-panel');
+        } else {
+            panel.classList.remove('active-panel');
+        }
+    });
+    
+    // Control de botones
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    
+    if (currentStep === 1) {
+        prevBtn.style.display = 'none';
+    } else {
+        prevBtn.style.display = 'inline-flex';
+    }
+    
+    if (currentStep === totalSteps) {
+        nextBtn.style.display = 'none';
+    } else {
+        nextBtn.style.display = 'inline-flex';
+    }
+    
+    // SI estamos en el paso 3 (Ubicación), inicializar el mapa
+    if (currentStep === 3) {
+        setTimeout(initMapaDenuncia, 100);
+    }
+}
+
+function goToStep(step) {
+    if (step >= 1 && step <= totalSteps) {
+        currentStep = step;
+        updatePanels();
+    }
+}
+
+// Event listeners
+document.getElementById('prevBtn').addEventListener('click', () => {
+    if (currentStep > 1) goToStep(currentStep - 1);
+});
+
+document.getElementById('nextBtn').addEventListener('click', () => {
+    if (currentStep < totalSteps) goToStep(currentStep + 1);
+});
+
+// Click en los pasos de la barra lateral
+document.querySelectorAll('.steps-vertical li').forEach(step => {
+    step.addEventListener('click', () => {
+        const stepNum = parseInt(step.getAttribute('data-step'));
+        goToStep(stepNum);
+        if (stepNum === 3) {
+            setTimeout(initMapaDenuncia, 150);
+        }
+    });
+});
+
+// Inicializar al cargar la página
+document.addEventListener('DOMContentLoaded', function() {
+    updatePanels();
+    // Si el paso actual es el 3, inicializar el mapa
+    if (currentStep === 3) {
+        setTimeout(initMapaDenuncia, 200);
+    }
+});
+</script>
+
+<div class="form-actions spacing-top" style="margin-top: 20px;">
   <a href="{{ url_for('admin_denuncias.admin_lista_denuncias') }}" class="btn btn-ghost">← Volver a bandeja</a>
 </div>
 {% endblock %}

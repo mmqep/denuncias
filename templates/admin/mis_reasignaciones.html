@@ -1,0 +1,61 @@
+{% extends "base_admin.html" %}
+{% block title %}Mis reasignaciones · MMQEP{% endblock %}
+{% block page_heading %}Denuncias que reasigné (últimas 48 horas){% endblock %}
+{% block body %}
+
+<div class="card form-card spacing-top">
+    <p class="hint">
+        <strong>¿Reasignaste una denuncia por error?</strong><br>
+        Aquí aparecen las denuncias que reasignaste en las últimas 48 horas. 
+        Puedes recuperarlas si te equivocaste.
+    </p>
+</div>
+
+{% if reasignaciones %}
+<div class="card table-card spacing-top">
+    <div class="table-wrap scroll-x">
+        <table class="data-table striped">
+            <thead>
+                <tr>
+                    <th>Código</th>
+                    <th>Categoría</th>
+                    <th>Estado</th>
+                    <th>Prioridad</th>
+                    <th>Reasignada a</th>
+                    <th>Fecha reasignación</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in reasignaciones %}
+                <tr>
+                    <td><code>{{ d.codigo }}</code></td>
+                    <td>{{ d.subcategoria or d.categoria }}</td>
+                    <td>{{ d.estado }}</td>
+                    <td><span class="badge">{{ d.prioridad }}</span></td>
+                    <td>{{ d.reasignado_a or '—' }}</td>
+                    <td>{{ d.fecha_reasignacion }}</td>
+                    <td>
+                        <form method="post" action="{{ url_for('admin_denuncias.admin_recuperar_mis_reasignacion', did=d.id) }}" 
+                            onsubmit="return confirm('⚠️ ¿Recuperar esta denuncia?\n\nVolverá a estar a su cargo.')" 
+                            style="display: inline;">
+                            <button type="submit" class="btn btn-primary btn-small" style="background-color: #f59e0b; border-color: #f59e0b;">Recuperar denuncia</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="card form-card spacing-top">
+    <p class="muted">No tienes denuncias reasignadas en las últimas 48 horas.</p>
+    <p class="hint">Si reasignaste una denuncia por error, aparecerá aquí para que puedas recuperarla.</p>
+</div>
+{% endif %}
+
+<div class="form-actions spacing-top">
+    <a href="{{ url_for('admin_denuncias.admin_dashboard') }}" class="btn btn-ghost">← Volver al dashboard</a>
+</div>
+{% endblock %}

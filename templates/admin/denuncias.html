@@ -89,11 +89,18 @@
           <td>{{ d.asignado or '—' }}</td>
           <td>{{ d.fecha_creacion }}</td>
           <td class="td-actions">
-            <a class="btn btn-small btn-primary" href="{{ url_for('admin_denuncias.admin_detalle', did=d.id) }}">Ver</a>
-            {% if session.get('rol') == 'Administrador' %}
-            <a class="btn btn-small btn-outline" href="{{ url_for('admin_denuncias.admin_reporte_denuncia_interno_pdf', did=d.id) }}" title="Reporte interno PDF">PDF int.</a>
-            <a class="btn btn-small btn-outline" href="{{ url_for('admin_denuncias.admin_reporte_denuncia_externo_pdf', did=d.id) }}" title="Reporte externo (ciudadano) PDF">PDF ext.</a>
-            {% endif %}
+              <a class="btn btn-small btn-primary" href="{{ url_for('admin_denuncias.admin_detalle', did=d.id) }}">Ver</a>
+              
+              {% if session.get('rol') == 'Administrador' %}
+                  {% if d.activo == 1 %}
+                  <button type="button" class="btn btn-small btn-danger" onclick="mostrarModalDesactivar('{{ d.id }}', '{{ d.codigo }}')">Desactivar</button>
+                  {% else %}
+                  <button type="button" class="btn btn-small btn-warning" onclick="mostrarModalReactivar('{{ d.id }}', '{{ d.codigo }}')">Reactivar</button>
+                  {% endif %}
+                  
+                  <a class="btn btn-small btn-outline" href="{{ url_for('admin_denuncias.admin_reporte_denuncia_interno_pdf', did=d.id) }}" title="Reporte interno PDF">PDF int.</a>
+                  <a class="btn btn-small btn-outline" href="{{ url_for('admin_denuncias.admin_reporte_denuncia_externo_pdf', did=d.id) }}" title="Reporte externo (ciudadano) PDF">PDF ext.</a>
+              {% endif %}
           </td>
         </tr>
         {% else %}
@@ -144,5 +151,45 @@ document.addEventListener('DOMContentLoaded', function(){
     }
   }
 });
+
 </script>
+<!-- Modal para desactivar denuncia -->
+<div id="modalDesactivar" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+    <div style="background:white; padding:20px; border-radius:8px; max-width:500px; margin:auto;">
+        <h3 id="modalDesactivarTitulo">Desactivar denuncia</h3>
+        <p id="modalDesactivarTexto"></p>
+        <form id="formDesactivar" method="post">
+            <label>Motivo de la desactivación <span class="req">*</span>
+                <textarea name="comentario_desactivacion" rows="3" required minlength="10" placeholder="Explique el motivo por el cual se desactiva esta denuncia..."></textarea>
+            </label>
+            <div class="form-actions" style="margin-top:15px;">
+                <button type="submit" class="btn btn-danger">Confirmar desactivación</button>
+                <button type="button" class="btn btn-ghost" onclick="cerrarModal()">Cancelar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function mostrarModalDesactivar(id, codigo) {
+        document.getElementById('modalDesactivarTitulo').innerText = 'Desactivar denuncia ' + codigo;
+        document.getElementById('modalDesactivarTexto').innerHTML = '¿Está seguro de desactivar esta denuncia? Una vez desactivada, desaparecerá de todas las bandejas.';
+        document.getElementById('formDesactivar').action = "{{ url_for('admin_denuncias.admin_toggle_denuncia_activo', did=0) }}".replace('0', id);
+        document.getElementById('modalDesactivar').style.display = 'flex';
+    }
+    
+    function mostrarModalReactivar(id, codigo) {
+        document.getElementById('modalDesactivarTitulo').innerText = 'Reactivar denuncia ' + codigo;
+        document.getElementById('modalDesactivarTexto').innerHTML = '¿Está seguro de reactivar esta denuncia? Volverá a aparecer en todas las bandejas.';
+        document.getElementById('formDesactivar').action = "{{ url_for('admin_denuncias.admin_toggle_denuncia_activo', did=0) }}".replace('0', id);
+        // Para reactivar, el comentario no es obligatorio, pero igual se puede agregar
+        document.getElementById('modalDesactivar').style.display = 'flex';
+    }
+    
+    function cerrarModal() {
+        document.getElementById('modalDesactivar').style.display = 'none';
+        document.getElementById('formDesactivar').reset();
+    }
+</script>
+
 {% endblock %}
