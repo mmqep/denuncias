@@ -2552,7 +2552,7 @@ def register_admin_routes(bp):
             FROM denuncias d
             LEFT JOIN usuarios u ON u.id = d.usuario_asignado_id
             WHERE d.reasignado_por_id = %s 
-            AND d.fecha_reasignacion > DATE_SUB(NOW(), INTERVAL 48 HOUR)
+            AND d.fecha_reasignacion > datetime('now', '-48 hours')
             AND d.responsable_anterior_id IS NOT NULL
             ORDER BY d.fecha_reasignacion DESC
         """
