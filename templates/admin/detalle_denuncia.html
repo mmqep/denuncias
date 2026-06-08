@@ -121,7 +121,7 @@
     <div class="step-panel" data-step="5">
       <h2 class="panel-title">5. Gestión del Expediente</h2>
       
-      {% if rol == 'Administrador' %}
+      {% if rol == 'AdministradorGlobal' %}
       <!-- Asignar área (solo Administrador) -->
       <div class="card form-card spacing-top" style="margin-top: 0;">
         <h3 class="card-title">Asignar o reasignar área</h3>
@@ -270,54 +270,88 @@
       <h2 class="panel-title">6. Seguimiento y Estado del Expediente</h2>
       
       {% if rol != 'Consulta' %}
+
       <!-- Registro institucional -->
       <div class="card form-card spacing-top" style="margin-top: 0;">
         <h3 class="card-title">Registro institucional</h3>
         
-        <form method="post" action="{{ url_for('admin_denuncias.admin_seguimiento', did=d.id) }}" class="stack-form subcard">
-          <h4 class="subsection">Observación interna</h4>
-          <input type="hidden" name="tipo_gestion" value="observacion">
-          <label>Observación (solo personal interno)<textarea name="texto_seguimiento" rows="3" placeholder="Use este campo solo para notas de uso institucional."></textarea></label>
-          <button type="submit" class="btn btn-outline btn-small">Guardar observación</button>
-        </form>
+        {% if rol in ('AdministradorGlobal', 'AdminCierre', 'Responsable') %}
+          <!-- Formularios activos para roles con permisos de escritura -->
+          <form method="post" action="{{ url_for('admin_denuncias.admin_seguimiento', did=d.id) }}" class="stack-form subcard">
+            <h4 class="subsection">Observación interna</h4>
+            <input type="hidden" name="tipo_gestion" value="observacion">
+            <label>Observación (solo personal interno)<textarea name="texto_seguimiento" rows="3" placeholder="Use este campo solo para notas de uso institucional."></textarea></label>
+            <button type="submit" class="btn btn-outline btn-small">Guardar observación</button>
+          </form>
 
-        <form method="post" action="{{ url_for('admin_denuncias.admin_seguimiento', did=d.id) }}" class="stack-form subcard">
-          <h4 class="subsection">Gestión realizada ante el ciudadano</h4>
-          <input type="hidden" name="tipo_gestion" value="gestion">
-          <label>Describe la gestión pública efectuada<textarea name="texto_seguimiento" rows="3" placeholder="Acciones comunicadas al denunciante, visitas insitu, llamadas…"></textarea></label>
-          <button type="submit" class="btn btn-accent btn-small">Registrar gestión</button>
-        </form>
+          <form method="post" action="{{ url_for('admin_denuncias.admin_seguimiento', did=d.id) }}" class="stack-form subcard">
+            <h4 class="subsection">Gestión realizada ante el ciudadano</h4>
+            <input type="hidden" name="tipo_gestion" value="gestion">
+            <label>Describe la gestión pública efectuada<textarea name="texto_seguimiento" rows="3" placeholder="Acciones comunicadas al denunciante, visitas insitu, llamadas…"></textarea></label>
+            <button type="submit" class="btn btn-accent btn-small">Registrar gestión</button>
+          </form>
+        {% else %}
+          <!-- Formularios deshabilitados (solo lectura) para Supervisor y otros perfiles sin permiso -->
+          <form class="stack-form subcard" onsubmit="return false;">
+            <h4 class="subsection">Observación interna</h4>
+            <label>Observación (solo personal interno)<textarea name="texto_seguimiento" rows="3" disabled style="background-color: #f3f4f6;" placeholder="Perfil de solo lectura: no puede añadir observaciones."></textarea></label>
+            <button type="button" class="btn btn-outline btn-small" disabled>Guardar observación</button>
+          </form>
+
+          <form class="stack-form subcard" onsubmit="return false;">
+            <h4 class="subsection">Gestión realizada ante el ciudadano</h4>
+            <label>Describe la gestión pública efectuada<textarea name="texto_seguimiento" rows="3" disabled style="background-color: #f3f4f6;" placeholder="Perfil de solo lectura: no puede registrar gestiones."></textarea></label>
+            <button type="button" class="btn btn-accent btn-small" disabled>Registrar gestión</button>
+          </form>
+        {% endif %}
       </div>
 
       <!-- Cambiar estado -->
       <div class="card form-card spacing-top">
-        <h3 class="card-title">Estado del expediente</h3>
-        <form method="post" action="{{ url_for('admin_denuncias.admin_cambia_estado', did=d.id) }}" class="stack-form">
-          <label>Nuevo estado
-            {% if rol == 'Administrador' %}
-            <select name="estado" required>
-              {% for e in estados_permitidos %}
-              <option value="{{ e }}" {% if d.estado == e %}selected{% endif %}>{{ e }}</option>
-              {% endfor %}
-            </select>
-            {% else %}
-            <select name="estado" required>
-              <option value="" disabled>Elija transición</option>
-              <option value="En atención">En atención</option>
-              <option value="Solucionada">Solucionada</option>
-            </select>
-            {% endif %}
-          </label>
-          <label>Nota (opcional, queda registrada en historial)<textarea name="nota_estado" rows="2"></textarea></label>
-          <div class="btn-row">
-            <button type="submit" class="btn btn-primary">Cambiar estado</button>
-            {% if rol == 'Administrador' %}
-            <span class="hint-inline">Para <strong>cierre formal</strong> seleccione «Cerrada» (solo su perfil puede aplicarlo).</span>
-            {% else %}
-            <span class="hint-inline">El cierre formal del expediente («Cerrada») lo aplica un usuario con perfil <strong>Administrador</strong>.</span>
-            {% endif %}
-          </div>
-        </form>
+          <h3 class="card-title">Estado del expediente</h3>
+          <form method="post" action="{{ url_for('admin_denuncias.admin_cambia_estado', did=d.id) }}" class="stack-form">
+              <label>Nuevo estado
+                  {% if rol == 'AdministradorGlobal' or rol == 'AdminCierre' %}
+                  <!-- Administrador Global y AdminCierre: ven todos los estados -->
+                  <select name="estado" required>
+                      {% for e in estados_permitidos %}
+                      <option value="{{ e }}" {% if d.estado == e %}selected{% endif %}>{{ e }}</option>
+                      {% endfor %}
+                  </select>
+                  {% elif rol == 'Responsable' %}
+                  <!-- Responsable: solo puede cambiar a En atención o Solucionada -->
+                  <select name="estado" required>
+                      <option value="" disabled>Elija transición</option>
+                      <option value="En atención" {% if d.estado == 'En atención' %}selected{% endif %}>En atención</option>
+                      <option value="Solucionada" {% if d.estado == 'Solucionada' %}selected{% endif %}>Solucionada</option>
+                  </select>
+                  {% else %}
+                  <!-- Supervisor o Consulta: no pueden cambiar estado -->
+                  <select name="estado" disabled style="background-color: #f3f4f6;">
+                      <option value="{{ d.estado }}" selected>{{ d.estado }}</option>
+                  </select>
+                  <input type="hidden" name="estado" value="{{ d.estado }}">
+                  {% endif %}
+              </label>
+              
+              {% if rol != 'Supervisor' and rol != 'Consulta' %}
+              <label>Nota (opcional, queda registrada en historial)<textarea name="nota_estado" rows="2"></textarea></label>
+              <div class="btn-row">
+                  <button type="submit" class="btn btn-primary">Cambiar estado</button>
+                  {% if rol == 'AdministradorGlobal' %}
+                  <span class="hint-inline">Puede cambiar a <strong>cualquier estado</strong>, incluyendo «Cerrada».</span>
+                  {% elif rol == 'AdminCierre' %}
+                  <span class="hint-inline">Solo puede cambiar el estado a <strong>«Cerrada»</strong>. Los demás estados están bloqueados.</span>
+                  {% elif rol == 'Responsable' %}
+                  <span class="hint-inline">Puede cambiar entre <strong>«En atención»</strong> y <strong>«Solucionada»</strong>. El cierre formal lo aplica un Administrador.</span>
+                  {% endif %}
+              </div>
+              {% else %}
+              <div class="btn-row">
+                  <span class="hint-inline">⚠️ Su perfil no permite cambiar el estado del expediente (solo visualización).</span>
+              </div>
+              {% endif %}
+          </form>
       </div>
       {% else %}
       <p class="muted spacing-top"><strong>Rol Consulta:</strong> sólo puede visualizar el expediente y los reportes.</p>

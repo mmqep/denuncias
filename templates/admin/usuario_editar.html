@@ -5,20 +5,56 @@
 
 <div class="card form-card">
   <form method="post" class="stack-form">
-    <label>Nombres y apellidos<input type="text" name="nombres" value="{{ u.nombres }}" required maxlength="180"></label>
-    <label>Correo (usuario de ingreso)<input type="email" name="correo" value="{{ u.correo }}" required maxlength="160"></label>
-    {% if u.rol == 'Responsable' and u.area_id %}
-    <p class="hint">Área vinculada: se define en «Áreas institucionales». Si cambia nombre o correo aquí, se actualizan los datos de contacto mostrados para esa área.</p>
-    {% elif u.rol == 'Responsable' %}
-    <p class="hint">Este responsable aún no está asignado a un área. Asígnelo desde «Áreas institucionales».</p>
+    <label>Nombres y apellidos
+      <input type="text" name="nombres" value="{{ u.nombres }}" required maxlength="180">
+    </label>
+    <label>Correo (usuario de ingreso)
+      <input type="email" name="correo" value="{{ u.correo }}" required maxlength="160">
+    </label>
+    
+    <!-- Selector de Rol (solo visible para AdministradorGlobal) -->
+    {% if session.get('rol') == 'AdministradorGlobal' %}
+    <label>Rol
+      <select name="rol" required>
+        <option value="AdministradorGlobal" {% if u.rol == 'AdministradorGlobal' %}selected{% endif %}>Administrador Global (TIC)</option>
+        <option value="AdminCierre" {% if u.rol == 'AdminCierre' %}selected{% endif %}>Administrador de Cierre (Karla)</option>
+        <option value="Responsable" {% if u.rol == 'Responsable' %}selected{% endif %}>Responsable de Área</option>
+        <option value="Supervisor" {% if u.rol == 'Supervisor' %}selected{% endif %}>Supervisor / Jefe (Solo lectura)</option>
+      </select>
+    </label>
+    {% else %}
+    <p class="hint">Rol actual: <strong>{{ u.rol }}</strong></p>
+    <input type="hidden" name="rol" value="{{ u.rol }}">
     {% endif %}
-    <label>Nueva contraseña <span class="muted">(dejar vacío para no cambiar)</span><input type="password" name="password" minlength="8" autocomplete="new-password"></label>
+
+    <!-- Selector de Área (para Responsable y Supervisor) -->
+    {% if u.rol in ['Responsable', 'Supervisor'] or session.get('rol') == 'AdministradorGlobal' %}
+    <label>Área institucional
+      <select name="area_id">
+        <option value="">— Sin asignar —</option>
+        {% for area in areas %}
+        <option value="{{ area.id }}" {% if u.area_id == area.id %}selected{% endif %}>{{ area.nombre }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <p class="hint">
+      {% if u.rol == 'Responsable' %}
+      <strong>Responsable:</strong> Solo puede ver y gestionar denuncias de esta área.
+      {% elif u.rol == 'Supervisor' %}
+      <strong>Supervisor:</strong> Solo puede VER (no editar) las denuncias de esta área.
+      {% endif %}
+    </p>
+    {% endif %}
+
+    <label>Nueva contraseña <span class="muted">(dejar vacío para no cambiar)</span>
+      <input type="password" name="password" minlength="8" autocomplete="new-password">
+    </label>
+    
     <div class="form-actions">
-      <button type="submit" class="btn btn-primary">Guardar</button>
+      <button type="submit" class="btn btn-primary">Guardar cambios</button>
       <a href="{{ url_for('admin_denuncias.admin_usuarios') }}" class="btn btn-ghost">Cancelar</a>
     </div>
   </form>
-  <p class="muted spacing-top">Rol fijo para esta cuenta: <strong>{{ u.rol }}</strong>. Cree otra cuenta para otro perfil si lo requiere.</p>
 </div>
 
 {% endblock %}

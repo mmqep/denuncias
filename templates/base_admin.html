@@ -190,7 +190,7 @@
         {% if session.get('rol') == 'Responsable' %}
         <a href="{{ url_for('admin_denuncias.admin_mis_reasignaciones') }}">Mis reasignaciones</a>
         {% endif %}
-        {% if session.get('rol') == 'Administrador' %}
+        {% if session.get('rol') == 'AdministradorGlobal' %}
         {% set ep_admin = request.endpoint or '' %}
         <a href="{{ url_for('admin_denuncias.admin_categorias_panel') }}" class="{{ 'active' if 'admin_categorias_panel' in ep_admin or '.admin_cat' in ep_admin or '.admin_subcat' in ep_admin else '' }}">Categorías</a>
         <a href="{{ url_for('admin_denuncias.admin_areas_panel') }}" class="{{ 'active' if 'admin_areas_panel' in ep_admin or 'admin_area_' in ep_admin else '' }}">Áreas</a>
