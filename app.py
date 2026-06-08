@@ -428,10 +428,16 @@ def create_app():
         JSON_ASCII=False,
     )
 
-    # Forzar uso de FileSystemLoader (sin DictLoader)
-    from jinja2 import FileSystemLoader
-    template_dir = os.path.join(app.root_path, "templates")
-    app.jinja_env.loader = FileSystemLoader(template_dir)
+    # Usar DictLoader con el caché generado (solución definitiva para Vercel)
+    try:
+        from _templates_cache import TEMPLATES
+        from jinja2 import DictLoader
+        app.jinja_env.loader = DictLoader(TEMPLATES)
+    except ImportError:
+        # Fallback por si no existe _templates_cache.py (por ejemplo, en desarrollo local)
+        from jinja2 import FileSystemLoader
+        template_dir = os.path.join(app.root_path, "templates")
+        app.jinja_env.loader = FileSystemLoader(template_dir)
 
     # ========== AGREGAR ESTAS LÍNEAS ==========
     # Cargar configuraciones de Backblaze B2
