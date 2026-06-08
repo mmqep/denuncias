@@ -425,9 +425,13 @@ def create_app():
         DB_CONFIG=DB_CONFIG,
         MAX_CONTENT_LENGTH=int(MAX_UPLOAD_SIZE_BYTES) * 5,
         UPLOAD_FOLDER=os.path.join(app.root_path, UPLOAD_FOLDER),
-        # Flask 2.x: JSON y tojson en plantillas conservan caracteres unicode (acentos sin \uXXXX).
         JSON_ASCII=False,
     )
+
+    # Forzar uso de FileSystemLoader (sin DictLoader)
+    from jinja2 import FileSystemLoader
+    template_dir = os.path.join(app.root_path, "templates")
+    app.jinja_env.loader = FileSystemLoader(template_dir)
 
     # ========== AGREGAR ESTAS LÍNEAS ==========
     # Cargar configuraciones de Backblaze B2
