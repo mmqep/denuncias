@@ -19,6 +19,7 @@
 </div>
 
 <script type="application/json" id="mmq-areas-json">{{ areas_ls|tojson }}</script>
+<script type="application/json" id="mmq-responsables-json">{{ responsables_ls|tojson }}</script>
 <span id="mmq-url-tpl" style="display:none"
   data-crear="{{ url_for('admin_denuncias.admin_subcat_crear', cid=982734651) }}"
   data-editar="{{ url_for('admin_denuncias.admin_subcat_actualizar', sid=982734651) }}"
@@ -93,6 +94,7 @@
                 <th>Orden</th>
                 <th>Nombre de la subcategoría</th>
                 <th>Área sugerida</th>
+                <th>Responsable directo</th>
                 <th>En portal</th>
                 <th class="th-actions">Acciones</th>
               </tr>
@@ -104,6 +106,7 @@
                 <td>{{ s.orden }}</td>
                 <td class="wrap-cell td-name">{{ s.nombre }}</td>
                 <td class="wrap-cell">{{ s.area_pri_nombre or '—' }}</td>
+                <td class="wrap-cell">{{ s.usuario_pri_nombre or '—' }}</td>
                 <td>
                   <form method="post" action="{{ url_for('admin_denuncias.admin_subcat_alternar', sid=s.id) }}" class="inline-form">
                     <button type="submit" class="btn-icon-tiny {% if s.activo %}btn-icon-tiny--on{% else %}btn-icon-tiny--off{% endif %}" title="{{ 'Ocultar subcategoría del portal' if s.activo else 'Mostrar en portal' }}" aria-label="Cambiar visibilidad en portal">
@@ -122,7 +125,8 @@
                       data-cid="{{ c.id }}"
                       data-nombre="{{ s.nombre|e }}"
                       data-orden="{{ s.orden }}"
-                      data-area="{{ s.area_id_principal or '' }}">Editar</button>
+                      data-area="{{ s.area_id_principal or '' }}"
+                      data-usuario="{{ s.usuario_id_principal or '' }}">Editar</button>
                     {% set ns = (s.denuncias_cnt | default(0))|int %}
                     {% if ns == 0 %}
                     <button type="button" class="btn btn-outline btn-mini btn-danger-soft js-mmq-sub-del"
@@ -171,6 +175,10 @@
         </label>
         <label>Área sugerida (opcional)
           <select name="area_id_principal" id="mmq-fs-area"></select>
+        </label>
+        <label>Responsable directo (opcional)
+          <select name="usuario_id_principal" id="mmq-fs-usuario"></select>
+          <span class="hint">Si se selecciona, tiene prioridad sobre el área sugerida al asignar nuevas denuncias.</span>
         </label>
         <div class="mmq-modal-actions">
           <button type="button" class="btn btn-ghost js-mmq-modal-close">Cancelar</button>
@@ -243,6 +251,14 @@
     areas = [];
   }
 
+  var responsables = [];
+  try {
+    var rj = document.getElementById("mmq-responsables-json");
+    responsables = JSON.parse(rj ? rj.textContent : "[]") || [];
+  } catch (e) {
+    responsables = [];
+  }
+
   var modalRoot = document.getElementById("mmq-modal-root");
   var panForm = document.getElementById("mmq-modal-sub-form");
   var panDel = document.getElementById("mmq-modal-sub-del");
@@ -250,6 +266,7 @@
   var formDel = document.getElementById("mmq-form-sub-del");
   var titleForm = document.getElementById("mmq-modal-sub-form-title");
   var selArea = document.getElementById("mmq-fs-area");
+  var selUsuario = document.getElementById("mmq-fs-usuario");
   var hidCid = document.getElementById("mmq-fs-categoria-id");
   var inpNom = document.getElementById("mmq-fs-nombre");
   var inpOrd = document.getElementById("mmq-fs-orden");
@@ -275,6 +292,23 @@
       o.textContent = a.nombre;
       if (String(selectedId) === String(a.id)) o.selected = true;
       selArea.appendChild(o);
+    });
+  }
+
+  function refillUsuarios(selectedId) {
+    if (!selUsuario) return;
+    selUsuario.innerHTML = "";
+    var o0 = document.createElement("option");
+    o0.value = "";
+    o0.textContent = "— Sin asignar directamente —";
+    selUsuario.appendChild(o0);
+    responsables.forEach(function (r) {
+      var o = document.createElement("option");
+      o.value = r.id;
+      var areaTxt = r.area_nombre ? " (" + r.area_nombre + ")" : "";
+      o.textContent = r.nombres + areaTxt;
+      if (String(selectedId) === String(r.id)) o.selected = true;
+      selUsuario.appendChild(o);
     });
   }
 
@@ -313,6 +347,7 @@
     inpNom.value = "";
     inpOrd.value = "0";
     refillAreas("");
+    refillUsuarios("");
     panDel.hidden = true;
     panCatDel.hidden = true;
     panForm.hidden = false;
@@ -328,6 +363,7 @@
     inpNom.value = d.nombre;
     inpOrd.value = d.orden;
     refillAreas(d.area || "");
+    refillUsuarios(d.usuario || "");
     panDel.hidden = true;
     panCatDel.hidden = true;
     panForm.hidden = false;
@@ -384,7 +420,8 @@
         cid: btn.getAttribute("data-cid"),
         nombre: btn.getAttribute("data-nombre"),
         orden: btn.getAttribute("data-orden"),
-        area: btn.getAttribute("data-area") || ""
+        area: btn.getAttribute("data-area") || "",
+        usuario: btn.getAttribute("data-usuario") || ""
       });
     });
   });

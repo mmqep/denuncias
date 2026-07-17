@@ -31,4 +31,319 @@
     </table>
   </div>
 </div>
+
+{% if datos_por_area is not none %}
+
+<div class="card spacing-top">
+  <h2 class="card-title">Distribución de denuncias por área responsable</h2>
+  {% if datos_por_area %}
+  <p class="muted" style="margin-top:0;margin-bottom:1.25rem;">
+    Total de denuncias activas: <strong style="color:var(--text-main);">{{ total_area }}</strong>
+  </p>
+  <div style="display:flex;gap:2rem;flex-wrap:wrap;align-items:flex-start;">
+    <div style="flex:0 0 auto;width:280px;max-width:100%;">
+      <canvas id="chart-por-area" width="280" height="280"></canvas>
+    </div>
+    <div style="flex:1;min-width:240px;" class="table-wrap">
+      <table class="data-table striped">
+        <thead>
+          <tr>
+            <th style="width:24px;"></th>
+            <th>Área</th>
+            <th style="text-align:right;">Denuncias</th>
+            <th style="text-align:right;">%</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in datos_por_area %}
+          <tr>
+            <td>
+              <span id="area-dot-{{ loop.index0 }}"
+                    style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#e2e8f0;vertical-align:middle;">
+              </span>
+            </td>
+            <td>{{ row.nombre }}</td>
+            <td style="text-align:right;">{{ row.c }}</td>
+            <td style="text-align:right;">{{ row.pct }}%</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <p class="muted">No hay áreas registradas.</p>
+  {% endif %}
+</div>
+
+<div class="card spacing-top">
+  <h2 class="card-title">Distribución de denuncias por categoría</h2>
+  {% if datos_por_categoria %}
+  <p class="muted" style="margin-top:0;margin-bottom:1.25rem;">
+    Total de denuncias activas: <strong style="color:var(--text-main);">{{ total_categoria }}</strong>
+  </p>
+  <div style="display:flex;gap:2rem;flex-wrap:wrap;align-items:flex-start;">
+    <div style="flex:0 0 auto;width:280px;max-width:100%;">
+      <canvas id="chart-por-categoria" width="280" height="280"></canvas>
+    </div>
+    <div style="flex:1;min-width:240px;" class="table-wrap">
+      <table class="data-table striped">
+        <thead>
+          <tr>
+            <th style="width:24px;"></th>
+            <th>Categoría</th>
+            <th style="text-align:right;">Denuncias</th>
+            <th style="text-align:right;">%</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in datos_por_categoria %}
+          <tr>
+            <td>
+              <span id="cat-dot-{{ loop.index0 }}"
+                    style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#e2e8f0;vertical-align:middle;">
+              </span>
+            </td>
+            <td>{{ row.nombre }}</td>
+            <td style="text-align:right;">{{ row.c }}</td>
+            <td style="text-align:right;">{{ row.pct }}%</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <p class="muted">No hay categorías registradas.</p>
+  {% endif %}
+</div>
+
+<div class="card spacing-top">
+  <h2 class="card-title">Distribución de denuncias por subcategoría</h2>
+  {% if datos_por_subcat %}
+  <p class="muted" style="margin-top:0;margin-bottom:1.25rem;">
+    Total de denuncias activas: <strong style="color:var(--text-main);">{{ total_subcat }}</strong>
+  </p>
+  <div style="display:flex;gap:2rem;flex-wrap:wrap;align-items:flex-start;">
+    <div style="flex:0 0 auto;width:280px;max-width:100%;">
+      <canvas id="chart-por-subcat" width="280" height="280"></canvas>
+    </div>
+    <div style="flex:1;min-width:240px;" class="table-wrap">
+      <table class="data-table striped">
+        <thead>
+          <tr>
+            <th style="width:24px;"></th>
+            <th>Subcategoría</th>
+            <th style="text-align:right;">Denuncias</th>
+            <th style="text-align:right;">%</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in datos_por_subcat %}
+          <tr>
+            <td>
+              <span id="sub-dot-{{ loop.index0 }}"
+                    style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#e2e8f0;vertical-align:middle;">
+              </span>
+            </td>
+            <td>{{ row.nombre }}</td>
+            <td style="text-align:right;">{{ row.c }}</td>
+            <td style="text-align:right;">{{ row.pct }}%</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <p class="muted">No hay subcategorías registradas.</p>
+  {% endif %}
+</div>
+
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+{% if datos_por_area or datos_por_categoria or datos_por_subcat %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% endif %}
+
+{% if datos_por_area %}
+<script>
+(function () {
+  var PALETTE = [
+    '#003366','#2980b9','#16a085','#27ae60','#f39c12',
+    '#8e44ad','#c0392b','#d35400','#1a6ea8','#2c3e50',
+    '#7f8c8d','#1abc9c','#e74c3c','#9b59b6','#2ecc71'
+  ];
+
+  var datos = {{ datos_por_area | tojson }};
+  var total = {{ total_area }};
+
+  var chartItems = datos.filter(function (r) { return r.c > 0; });
+  var labels = chartItems.map(function (r) { return r.nombre; });
+  var values = chartItems.map(function (r) { return r.c; });
+  var bgColors = chartItems.map(function (_, i) { return PALETTE[i % PALETTE.length]; });
+
+  var colorMap = {};
+  chartItems.forEach(function (r, i) {
+    colorMap[r.nombre] = PALETTE[i % PALETTE.length];
+  });
+  datos.forEach(function (r, i) {
+    var el = document.getElementById('area-dot-' + i);
+    if (el) el.style.background = colorMap[r.nombre] || '#e2e8f0';
+  });
+
+  if (chartItems.length > 0) {
+    var ctx = document.getElementById('chart-por-area').getContext('2d');
+    new Chart(ctx, {
+      type: 'pie',
+      data: {
+        labels: labels,
+        datasets: [{
+          data: values,
+          backgroundColor: bgColors,
+          borderColor: '#ffffff',
+          borderWidth: 2
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: function (ctx) {
+                var pct = total > 0 ? (ctx.parsed / total * 100).toFixed(1) : '0.0';
+                return ctx.label + ': ' + ctx.parsed + ' (' + pct + '%)';
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+})();
+</script>
+{% endif %}
+
+{% if datos_por_categoria %}
+<script>
+(function () {
+  var PALETTE = [
+    '#003366','#2980b9','#16a085','#27ae60','#f39c12',
+    '#8e44ad','#c0392b','#d35400','#1a6ea8','#2c3e50',
+    '#7f8c8d','#1abc9c','#e74c3c','#9b59b6','#2ecc71'
+  ];
+
+  var datos = {{ datos_por_categoria | tojson }};
+  var total = {{ total_categoria }};
+
+  var chartItems = datos.filter(function (r) { return r.c > 0; });
+  var labels = chartItems.map(function (r) { return r.nombre; });
+  var values = chartItems.map(function (r) { return r.c; });
+  var bgColors = chartItems.map(function (_, i) { return PALETTE[i % PALETTE.length]; });
+
+  var colorMap = {};
+  chartItems.forEach(function (r, i) {
+    colorMap[r.nombre] = PALETTE[i % PALETTE.length];
+  });
+  datos.forEach(function (r, i) {
+    var el = document.getElementById('cat-dot-' + i);
+    if (el) el.style.background = colorMap[r.nombre] || '#e2e8f0';
+  });
+
+  if (chartItems.length > 0) {
+    var ctx = document.getElementById('chart-por-categoria').getContext('2d');
+    new Chart(ctx, {
+      type: 'pie',
+      data: {
+        labels: labels,
+        datasets: [{
+          data: values,
+          backgroundColor: bgColors,
+          borderColor: '#ffffff',
+          borderWidth: 2
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: function (ctx) {
+                var pct = total > 0 ? (ctx.parsed / total * 100).toFixed(1) : '0.0';
+                return ctx.label + ': ' + ctx.parsed + ' (' + pct + '%)';
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+})();
+</script>
+{% endif %}
+
+{% if datos_por_subcat %}
+<script>
+(function () {
+  var PALETTE = [
+    '#003366','#2980b9','#16a085','#27ae60','#f39c12',
+    '#8e44ad','#c0392b','#d35400','#1a6ea8','#2c3e50',
+    '#7f8c8d','#1abc9c','#e74c3c','#9b59b6','#2ecc71'
+  ];
+
+  var datos = {{ datos_por_subcat | tojson }};
+  var total = {{ total_subcat }};
+
+  var chartItems = datos.filter(function (r) { return r.c > 0; });
+  var labels = chartItems.map(function (r) { return r.nombre; });
+  var values = chartItems.map(function (r) { return r.c; });
+  var bgColors = chartItems.map(function (_, i) { return PALETTE[i % PALETTE.length]; });
+
+  var colorMap = {};
+  chartItems.forEach(function (r, i) {
+    colorMap[r.nombre] = PALETTE[i % PALETTE.length];
+  });
+  datos.forEach(function (r, i) {
+    var el = document.getElementById('sub-dot-' + i);
+    if (el) el.style.background = colorMap[r.nombre] || '#e2e8f0';
+  });
+
+  if (chartItems.length > 0) {
+    var ctx = document.getElementById('chart-por-subcat').getContext('2d');
+    new Chart(ctx, {
+      type: 'pie',
+      data: {
+        labels: labels,
+        datasets: [{
+          data: values,
+          backgroundColor: bgColors,
+          borderColor: '#ffffff',
+          borderWidth: 2
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: function (ctx) {
+                var pct = total > 0 ? (ctx.parsed / total * 100).toFixed(1) : '0.0';
+                return ctx.label + ': ' + ctx.parsed + ' (' + pct + '%)';
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+})();
+</script>
+{% endif %}
+
 {% endblock %}
