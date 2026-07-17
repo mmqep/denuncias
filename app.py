@@ -69,7 +69,8 @@ def obtener_subcategoria_valida(db, sid):
     except (TypeError, ValueError):
         return None
     q = """
-    SELECT s.id, s.nombre, s.categoria_id, s.area_id_principal, s.activo AS sub_activo,
+    SELECT s.id, s.nombre, s.categoria_id, s.area_id_principal, s.usuario_id_principal,
+           s.activo AS sub_activo,
            c.nombre AS categoria_nombre, c.activo AS cat_activo
     FROM subcategorias s
     INNER JOIN categorias c ON c.id = s.categoria_id
@@ -534,14 +535,17 @@ def usuario_puede_ver_denuncia(d, rol, uid):
     if rol in ("AdministradorGlobal", "AdminCierre"):
         return True
     if rol == "Responsable":
+        # Directamente asignado a este usuario
+        if d.get("usuario_asignado_id") is not None and d.get("usuario_asignado_id") == uid:
+            return True
+        # Sin asignar a nadie específico, pero en el área del responsable
         ua = session.get("area_id")
-        if ua and d.get("area_id"):
+        if ua and d.get("area_id") and d.get("usuario_asignado_id") is None:
             try:
                 return int(d["area_id"]) == int(ua)
             except (TypeError, ValueError):
                 pass
-        aid = d.get("usuario_asignado_id")
-        return aid is not None and aid == uid
+        return False
     if rol == "Supervisor":
         # Supervisor solo ve denuncias de su área
         ua = session.get("area_id")
@@ -696,7 +700,25 @@ def register_public_routes(bp):
         ua = aid_asig = None
         estado_ini = "Recibida"
         aprinc = sc.get("area_id_principal") if sc else None
-        if aprinc:
+        uprinc = sc.get("usuario_id_principal") if sc else None
+        if uprinc:
+            with conn.cursor() as _cur_up:
+                _cur_up.execute(
+                    "SELECT id, area_id FROM usuarios WHERE id=%s AND rol='Responsable' AND activo=1 LIMIT 1",
+                    (uprinc,),
+                )
+                _ur = _cur_up.fetchone()
+            if _ur:
+                ua = _ur["id"]
+                aid_asig = _ur.get("area_id")
+                estado_ini = "Asignada"
+            elif aprinc:
+                uw = resolver_usuario_responsable_area(conn, aprinc)
+                if uw:
+                    ua = uw["id"]
+                    aid_asig = aprinc
+                    estado_ini = "Asignada"
+        elif aprinc:
             uw = resolver_usuario_responsable_area(conn, aprinc)
             if uw:
                 ua = uw["id"]
@@ -913,7 +935,10 @@ def register_admin_routes(bp):
             return base_filtro, []
         ua = session.get("area_id")
         if rol == "Responsable" and ua:
-            return base_filtro + " AND d.area_id IS NOT NULL AND d.area_id = %s", [ua]
+            return (
+                base_filtro + " AND (d.usuario_asignado_id = %s OR (d.area_id = %s AND d.usuario_asignado_id IS NULL))",
+                [uid, ua],
+            )
         if rol == "Responsable":
             return base_filtro + " AND d.usuario_asignado_id = %s", [uid]
         if rol == "Supervisor" and ua:
@@ -1995,6 +2020,15 @@ def register_admin_routes(bp):
         conn = get_db()
         areas_ls = listar_areas_activas(conn)
         with conn.cursor() as cur:
+            cur.execute("""
+                SELECT u.id, u.nombres, u.area_id, a.nombre AS area_nombre
+                FROM usuarios u
+                LEFT JOIN areas a ON a.id = u.area_id
+                WHERE u.rol = 'Responsable' AND u.activo = 1
+                ORDER BY u.nombres
+            """)
+            responsables_ls = cur.fetchall()
+        with conn.cursor() as cur:
             cur.execute("SELECT id, nombre, orden, activo FROM categorias ORDER BY orden, nombre")
             cats = cur.fetchall()
             subs = []
@@ -2002,9 +2036,12 @@ def register_admin_routes(bp):
                 cur.execute(
                     """
                     SELECT s.id, s.categoria_id, s.nombre, s.orden, s.activo, s.area_id_principal,
-                        a.nombre AS area_pri_nombre
+                        a.nombre AS area_pri_nombre,
+                        s.usuario_id_principal,
+                        ur.nombres AS usuario_pri_nombre
                     FROM subcategorias s
                     LEFT JOIN areas a ON a.id = s.area_id_principal
+                    LEFT JOIN usuarios ur ON ur.id = s.usuario_id_principal
                     ORDER BY s.categoria_id, s.orden, s.nombre
                     """
                 )
@@ -2025,6 +2062,7 @@ def register_admin_routes(bp):
             categorias=cats,
             subs_por_cat=subs_por_cat,
             areas_ls=areas_ls,
+            responsables_ls=responsables_ls,
         )
 
     @bp.route("/categorias/crear", methods=["POST"])
@@ -2099,6 +2137,13 @@ def register_admin_routes(bp):
                 aprin = int(ap)
         except ValueError:
             aprin = None
+        uprin = None
+        try:
+            up = request.form.get("usuario_id_principal") or ""
+            if up.strip():
+                uprin = int(up)
+        except ValueError:
+            uprin = None
         if len(nom) < 4:
             flash("Nombre de subcategoría demasiado corto.", "danger")
             return redirect(url_for("admin_denuncias.admin_categorias_panel"))
@@ -2106,8 +2151,8 @@ def register_admin_routes(bp):
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "INSERT INTO subcategorias (categoria_id, nombre, orden, activo, area_id_principal) VALUES (%s,%s,990,1,%s)",
-                    (cid, nom[:220], aprin),
+                    "INSERT INTO subcategorias (categoria_id, nombre, orden, activo, area_id_principal, usuario_id_principal) VALUES (%s,%s,990,1,%s,%s)",
+                    (cid, nom[:220], aprin, uprin),
                 )
             conn.commit()
             flash("Subcategoría creada.", "success")
@@ -2132,6 +2177,13 @@ def register_admin_routes(bp):
                 aprin = int(ap)
         except ValueError:
             aprin = None
+        uprin = None
+        try:
+            up = request.form.get("usuario_id_principal") or ""
+            if up.strip():
+                uprin = int(up)
+        except ValueError:
+            uprin = None
         cid = None
         try:
             cid = int(request.form.get("categoria_id") or "")
@@ -2142,13 +2194,13 @@ def register_admin_routes(bp):
             with conn.cursor() as cur:
                 if cid:
                     cur.execute(
-                        "UPDATE subcategorias SET nombre=%s, orden=%s, area_id_principal=%s, categoria_id=%s WHERE id=%s",
-                        (nom[:220], orden, aprin, cid, sid),
+                        "UPDATE subcategorias SET nombre=%s, orden=%s, area_id_principal=%s, usuario_id_principal=%s, categoria_id=%s WHERE id=%s",
+                        (nom[:220], orden, aprin, uprin, cid, sid),
                     )
                 else:
                     cur.execute(
-                        "UPDATE subcategorias SET nombre=%s, orden=%s, area_id_principal=%s WHERE id=%s",
-                        (nom[:220], orden, aprin, sid),
+                        "UPDATE subcategorias SET nombre=%s, orden=%s, area_id_principal=%s, usuario_id_principal=%s WHERE id=%s",
+                        (nom[:220], orden, aprin, uprin, sid),
                     )
             conn.commit()
             flash("Subcategoría actualizada.", "success")
