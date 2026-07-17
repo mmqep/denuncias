@@ -2725,6 +2725,8 @@ def register_admin_routes(bp):
 
         datos_por_area = None
         total_area = 0
+        datos_por_categoria = None
+        total_categoria = 0
         if rol in ("AdministradorGlobal", "AdminCierre"):
             with conn.cursor() as cur:
                 cur.execute(
@@ -2743,11 +2745,30 @@ def register_admin_routes(bp):
             for row in datos_por_area:
                 row["pct"] = round(row["c"] / total_area * 100, 1) if total_area > 0 else 0.0
 
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT cat.nombre, COUNT(d.id) AS c
+                    FROM categorias cat
+                    LEFT JOIN denuncias d ON d.categoria_id = cat.id AND d.activo = 1
+                    GROUP BY cat.id, cat.nombre
+                    ORDER BY c DESC, cat.nombre
+                    """
+                )
+                datos_por_categoria = cur.fetchall()
+            for row in datos_por_categoria:
+                row["c"] = int(row["c"])
+            total_categoria = sum(r["c"] for r in datos_por_categoria)
+            for row in datos_por_categoria:
+                row["pct"] = round(row["c"] / total_categoria * 100, 1) if total_categoria > 0 else 0.0
+
         return render_template(
             "admin/reportes.html",
             tabla=totals,
             datos_por_area=datos_por_area,
             total_area=total_area,
+            datos_por_categoria=datos_por_categoria,
+            total_categoria=total_categoria,
         )
 
     @bp.route("/reportes/excel")
