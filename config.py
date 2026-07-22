@@ -40,6 +40,18 @@ ALLOWED_EXTENSIONS = {
 UPLOAD_FOLDER = _get("UPLOAD_FOLDER", "static/uploads_test")
 
 
+# ========== SERVICIO DE CORREO (SMTP) ==========
+SMTP_SERVER   = _get("SMTP_SERVER",   "mail.mmqep.gob.ec")
+SMTP_PORT     = int(_get("SMTP_PORT", "465"))
+SMTP_USERNAME = _get("SMTP_USERNAME", "")
+SMTP_PASSWORD = _get("SMTP_PASSWORD", "")
+SMTP_USE_SSL  = _get("SMTP_USE_SSL",  "True").lower() not in ("false", "0", "no")
+SMTP_FROM_NAME  = _get("SMTP_FROM_NAME",  "Sistema de Denuncias MMQEP")
+SMTP_FROM_EMAIL = _get("SMTP_FROM_EMAIL", "")
+# URL del panel administrativo; se incluye en los correos de notificación
+PORTAL_URL = _get("PORTAL_URL", "https://denuncias.mmqep.gob.ec/denuncias/admin/")
+
+
 # ========== BACKBLAZE B2 (almacenamiento en la nube) ==========
 B2_ACCOUNT_ID = _get("B2_ACCOUNT_ID")
 B2_APPLICATION_KEY = _get("B2_APPLICATION_KEY")

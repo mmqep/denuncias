@@ -838,6 +838,66 @@ def register_public_routes(bp):
             flash("No se pudo registrar la solicitud en este momento.", "danger")
             return redirect(url_for("public_denuncias.index"))
 
+        # Notificación por correo al Responsable asignado (nunca bloquea el registro)
+        if ua and codigo and nid:
+            try:
+                from mail_service import enviar_notificacion_nueva_denuncia
+                with conn.cursor() as _cur_resp:
+                    _cur_resp.execute(
+                        "SELECT nombres, correo FROM usuarios WHERE id=%s LIMIT 1",
+                        (ua,),
+                    )
+                    _resp = _cur_resp.fetchone()
+                if _resp and _resp.get("correo"):
+                    _area_nombre = None
+                    if aid_asig:
+                        with conn.cursor() as _cur_ar:
+                            _cur_ar.execute(
+                                "SELECT nombre FROM areas WHERE id=%s LIMIT 1",
+                                (aid_asig,),
+                            )
+                            _ar = _cur_ar.fetchone()
+                            _area_nombre = _ar["nombre"] if _ar else None
+                    _ok = enviar_notificacion_nueva_denuncia(
+                        _resp["correo"],
+                        _resp["nombres"],
+                        {
+                            "codigo": codigo,
+                            "categoria": cat_nom,
+                            "subcategoria": sub_nom,
+                            "fecha_creacion": now_local(),
+                            "estado": estado_ini,
+                            "prioridad": "Media",
+                            "area_nombre": _area_nombre or "",
+                            "ubicacion": ubicacion if ubicacion else None,
+                            "es_anonima": es_anon,
+                            "nombres_denunciante": nom if not es_anon else None,
+                        },
+                    )
+                    _obs_correo = (
+                        "El sistema notificó mediante correo electrónico al Responsable asignado."
+                        if _ok else
+                        "No fue posible enviar la notificación por correo electrónico al Responsable."
+                    )
+                    registrar_seguimiento(
+                        conn, nid, usuario_id=None, accion="NOTIFICACION_CORREO",
+                        estado_anterior=estado_ini, estado_nuevo=estado_ini,
+                        observacion=_obs_correo, area_id=aid_asig,
+                    )
+                    conn.commit()
+                else:
+                    import logging as _log
+                    _log.getLogger("mmqep.mail").warning(
+                        "Responsable (id=%s) sin correo registrado; sin notificación para denuncia %s.",
+                        ua, codigo,
+                    )
+            except Exception:
+                import logging as _log, traceback as _tb
+                _log.getLogger("mmqep.mail").error(
+                    "Error al procesar notificación de correo para denuncia %s:\n%s",
+                    codigo, _tb.format_exc(),
+                )
+
         return redirect(url_for("public_denuncias.resultado_codigo", cod=codigo))
 
     @bp.route("/resultado")
