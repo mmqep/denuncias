@@ -839,15 +839,26 @@ def register_public_routes(bp):
             return redirect(url_for("public_denuncias.index"))
 
         # Notificación por correo al Responsable asignado (nunca bloquea el registro)
-        if ua and codigo and nid:
-            try:
-                from mail_service import enviar_notificacion_nueva_denuncia
+        try:
+            from mail_service import enviar_notificacion_nueva_denuncia
+            import logging as _log
+            _log_mail = _log.getLogger("mmqep.mail")
+            _log_mail.debug(
+                "Verificación notificación: ua=%s, codigo=%s, nid=%s",
+                ua, codigo, nid,
+            )
+            if ua and codigo and nid:
                 with conn.cursor() as _cur_resp:
                     _cur_resp.execute(
                         "SELECT nombres, correo FROM usuarios WHERE id=%s LIMIT 1",
                         (ua,),
                     )
                     _resp = _cur_resp.fetchone()
+                _log_mail.debug(
+                    "Responsable id=%s: encontrado=%s, tiene_correo=%s",
+                    ua, _resp is not None,
+                    bool(_resp.get("correo")) if _resp else False,
+                )
                 if _resp and _resp.get("correo"):
                     _area_nombre = None
                     if aid_asig:
@@ -874,6 +885,7 @@ def register_public_routes(bp):
                             "nombres_denunciante": nom if not es_anon else None,
                         },
                     )
+                    _log_mail.debug("Resultado envío correo: %s", "exitoso" if _ok else "fallido")
                     _obs_correo = (
                         "El sistema notificó mediante correo electrónico al Responsable asignado."
                         if _ok else
@@ -886,17 +898,21 @@ def register_public_routes(bp):
                     )
                     conn.commit()
                 else:
-                    import logging as _log
-                    _log.getLogger("mmqep.mail").warning(
+                    _log_mail.warning(
                         "Responsable (id=%s) sin correo registrado; sin notificación para denuncia %s.",
                         ua, codigo,
                     )
-            except Exception:
-                import logging as _log, traceback as _tb
-                _log.getLogger("mmqep.mail").error(
-                    "Error al procesar notificación de correo para denuncia %s:\n%s",
-                    codigo, _tb.format_exc(),
+            else:
+                _log_mail.debug(
+                    "Notificación omitida (denuncia no asignada automáticamente): "
+                    "ua=%s, codigo=%s, nid=%s", ua, codigo, nid,
                 )
+        except Exception:
+            import logging as _log, traceback as _tb
+            _log.getLogger("mmqep.mail").error(
+                "Error en bloque de notificación para denuncia %s:\n%s",
+                codigo, _tb.format_exc(),
+            )
 
         return redirect(url_for("public_denuncias.resultado_codigo", cod=codigo))
 
