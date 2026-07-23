@@ -203,16 +203,28 @@ def _construir_html_nueva_denuncia(responsable_nombre, datos):
 
         <!-- Cabecera institucional -->
         <tr>
-          <td style="background-color:#003366;padding:28px 32px;">
-            <p style="margin:0 0 5px 0;color:#a8c4e0;font-size:11px;letter-spacing:1.2px;text-transform:uppercase;">
-              Empresa P&uacute;blica Metropolitana
-            </p>
-            <p style="margin:0 0 4px 0;color:#ffffff;font-size:20px;font-weight:700;">
-              Mercado Mayorista de Quito
-            </p>
-            <p style="margin:0;color:#ccdff0;font-size:13px;">
-              Sistema de Quejas y Denuncias Ciudadanas
-            </p>
+          <td style="background-color:#003366;padding:22px 32px;">
+            <table cellpadding="0" cellspacing="0" width="100%">
+              <tr>
+                <td style="vertical-align:middle;padding-right:18px;width:90px;">
+                  <img src="https://mercadomayorista.quito.gob.ec/wp-content/uploads/2026/06/Recurso-2PC-MAYORISTA-scaled.webp"
+                       alt="Sello Mercado Mayorista de Quito"
+                       width="80" height="80"
+                       style="display:block;width:80px;height:80px;object-fit:contain;">
+                </td>
+                <td style="vertical-align:middle;">
+                  <p style="margin:0 0 5px 0;color:#a8c4e0;font-size:11px;letter-spacing:1.2px;text-transform:uppercase;">
+                    Empresa P&uacute;blica Metropolitana
+                  </p>
+                  <p style="margin:0 0 4px 0;color:#ffffff;font-size:20px;font-weight:700;">
+                    Mercado Mayorista de Quito
+                  </p>
+                  <p style="margin:0;color:#ccdff0;font-size:13px;">
+                    Sistema de Quejas y Denuncias Ciudadanas
+                  </p>
+                </td>
+              </tr>
+            </table>
           </td>
         </tr>
 
