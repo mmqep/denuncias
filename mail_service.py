@@ -128,6 +128,33 @@ def enviar_correo(destinatario_email, destinatario_nombre, asunto, cuerpo_html, 
 # Construcción del HTML del correo de nueva denuncia
 # ---------------------------------------------------------------------------
 
+_SELLO_URL = (
+    "https://mercadomayorista.quito.gob.ec"
+    "/wp-content/uploads/2026/06/Recurso-2PC-MAYORISTA-scaled.webp"
+)
+
+
+def _sello_src():
+    """Descarga el sello institucional y lo devuelve como data URI.
+
+    Si la descarga falla (timeout, hotlink, red) devuelve la URL original
+    para que el cliente de correo intente cargarla directamente.
+    """
+    try:
+        import base64
+        import urllib.request
+        req = urllib.request.Request(
+            _SELLO_URL,
+            headers={"User-Agent": "MMQEP-Mailer/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = resp.read()
+        return "data:image/webp;base64," + base64.b64encode(data).decode("ascii")
+    except Exception as exc:
+        logger.warning("No se pudo incrustar el sello en el correo: %s", exc)
+        return _SELLO_URL
+
+
 def _construir_html_nueva_denuncia(responsable_nombre, datos):
     """Genera el cuerpo HTML institucional para la notificación de nueva denuncia."""
 
@@ -162,6 +189,7 @@ def _construir_html_nueva_denuncia(responsable_nombre, datos):
     )
     resp_nombre = _e(responsable_nombre)
     url_portal  = _e(PORTAL_URL)
+    sello       = _sello_src()
 
     filas = [
         ("C&oacute;digo de denuncia",  f"<strong style='color:#003366;'>{codigo}</strong>"),
@@ -207,7 +235,7 @@ def _construir_html_nueva_denuncia(responsable_nombre, datos):
             <table cellpadding="0" cellspacing="0" width="100%">
               <tr>
                 <td style="vertical-align:middle;padding-right:18px;width:90px;">
-                  <img src="https://mercadomayorista.quito.gob.ec/wp-content/uploads/2026/06/Recurso-2PC-MAYORISTA-scaled.webp"
+                  <img src="{sello}"
                        alt="Sello Mercado Mayorista de Quito"
                        width="80" height="80"
                        style="display:block;width:80px;height:80px;object-fit:contain;">
