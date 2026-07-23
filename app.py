@@ -2929,7 +2929,7 @@ def register_admin_routes(bp):
         filt, args = listar_where_base(rol, uid)
 
         sql = """
-        SELECT d.codigo, d.categoria, d.subcategoria, d.prioridad, d.estado,
+        SELECT d.codigo, d.categoria, d.subcategoria, d.estado,
                COALESCE(u.nombres,'') AS responsable,
                COALESCE(ar.nombre,'') AS area_institucional,
                d.fecha_creacion, d.fecha_cierre
@@ -2958,7 +2958,6 @@ def register_admin_routes(bp):
             "código",
             "categoría",
             "subcategoría",
-            "prioridad",
             "estado",
             "responsable cuenta",
             "área institucional",
@@ -2988,12 +2987,11 @@ def register_admin_routes(bp):
             ws.cell(row=ridx, column=1, value=str(rec["codigo"]))
             ws.cell(row=ridx, column=2, value=str(rec["categoria"]))
             ws.cell(row=ridx, column=3, value=str(rec["subcategoria"]))
-            ws.cell(row=ridx, column=4, value=str(rec["prioridad"]))
-            ws.cell(row=ridx, column=5, value=str(rec["estado"]))
-            ws.cell(row=ridx, column=6, value=str(rec["responsable"]))
-            ws.cell(row=ridx, column=7, value=str(rec.get("area_institucional") or ""))
-            ws.cell(row=ridx, column=8, value=as_date(rec["fecha_creacion"]))
-            ws.cell(row=ridx, column=9, value=as_date(rec["fecha_cierre"]))
+            ws.cell(row=ridx, column=4, value=str(rec["estado"]))
+            ws.cell(row=ridx, column=5, value=str(rec["responsable"]))
+            ws.cell(row=ridx, column=6, value=str(rec.get("area_institucional") or ""))
+            ws.cell(row=ridx, column=7, value=as_date(rec["fecha_creacion"]))
+            ws.cell(row=ridx, column=8, value=as_date(rec["fecha_cierre"]))
             ridx += 1
 
         for col in range(1, len(hdr) + 1):

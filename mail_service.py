@@ -153,7 +153,6 @@ def _construir_html_nueva_denuncia(responsable_nombre, datos):
     subcat     = _e(datos.get("subcategoria"))
     fecha      = _fmt_fecha(datos.get("fecha_creacion"))
     estado     = _e(datos.get("estado"))
-    prioridad  = _e(datos.get("prioridad"))
     area       = _e(datos.get("area_nombre"))
     ubicacion  = _e(datos.get("ubicacion")) if datos.get("ubicacion") else "&mdash;"
     denunciante = (
@@ -170,7 +169,6 @@ def _construir_html_nueva_denuncia(responsable_nombre, datos):
         ("Subcategor&iacute;a",        subcat),
         ("Fecha y hora de registro",   fecha),
         ("Estado inicial",             estado),
-        ("Prioridad",                  prioridad),
         ("&Aacute;rea responsable",    area),
         ("Ubicaci&oacute;n del hecho", ubicacion),
         ("Denunciante",                denunciante),

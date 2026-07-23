@@ -222,7 +222,6 @@ def construir_pdf_comprobante_denuncia(row, nombres_adjuntos=None):
         [
             ("Categoría", row.get("categoria")),
             ("Subcategoría", row.get("subcategoria")),
-            ("Prioridad", row.get("prioridad")),
             ("Estado al registro", row.get("estado")),
             ("Ubicación / lugar", row.get("ubicacion")),
             ("Fecha del hecho", _fmt_date(row.get("fecha_hecho"))),

@@ -159,7 +159,6 @@ def construir_pdf_reporte_bandeja(
 
         resumen = [
             ("Estado", row.get("estado")),
-            ("Prioridad", row.get("prioridad")),
             ("Rubro / subcategoría", row.get("subcategoria") or row.get("categoria")),
             ("Área institucional", row.get("area_nombre") or "—"),
             ("Responsable asignado", row.get("asignado") or "—"),
