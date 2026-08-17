@@ -3020,6 +3020,129 @@ def register_admin_routes(bp):
         rp.headers["Content-Disposition"] = 'attachment; filename="{}"'.format(filename.replace('"', ""))
         return rp
 
+    @bp.route("/reportes/excel-seguimiento")
+    @login_required
+    def excel_report_seguimiento():
+        rol = session["rol"]
+        uid = session["uid"]
+
+        filt, args = listar_where_base(rol, uid)
+
+        sql = """
+        SELECT d.codigo, d.categoria, d.subcategoria, d.estado,
+               COALESCE(u.nombres,'') AS responsable,
+               COALESCE(ar.nombre,'') AS area_institucional,
+               d.fecha_creacion, d.fecha_cierre,
+               s.fecha_creacion AS seg_fecha,
+               CASE WHEN s.id IS NULL THEN NULL
+                    WHEN s.usuario_id IS NULL THEN 'Canal público'
+                    ELSE us.nombres
+               END AS seg_usuario,
+               CASE WHEN s.id IS NULL THEN NULL
+                    ELSE COALESCE(ars.nombre,'')
+               END AS seg_area,
+               s.accion AS seg_accion,
+               s.estado_anterior AS seg_estado_anterior,
+               s.estado_nuevo AS seg_estado_nuevo,
+               s.observacion AS seg_observacion
+        FROM denuncias d
+        LEFT JOIN usuarios u ON u.id = d.usuario_asignado_id
+        LEFT JOIN areas ar ON ar.id = d.area_id
+        LEFT JOIN seguimientos s ON s.denuncia_id = d.id
+        LEFT JOIN usuarios us ON us.id = s.usuario_id
+        LEFT JOIN areas ars ON ars.id = s.area_id
+        WHERE 1=1 {filt}
+        ORDER BY d.fecha_creacion DESC, s.fecha_creacion ASC, s.id ASC
+        """.format(filt=filt)
+
+        conn = get_db()
+        with conn.cursor() as cur:
+            cur.execute(sql, tuple(args))
+            rows = cur.fetchall()
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Denuncias con seguimiento"
+
+        hdr = [
+            "código",
+            "categoría",
+            "subcategoría",
+            "estado actual",
+            "responsable",
+            "área institucional",
+            "fecha creación",
+            "fecha cierre",
+            "seg. fecha",
+            "seg. usuario",
+            "seg. área ref.",
+            "seg. acción",
+            "seg. estado anterior",
+            "seg. estado nuevo",
+            "seg. observación",
+        ]
+
+        for col, nm in enumerate(hdr, start=1):
+            ws.cell(row=1, column=col, value=nm)
+
+        ridx = 2
+
+        def as_date_seg(v):
+            if v is None:
+                return ""
+            try:
+                if isinstance(v, str):
+                    return v[:19]
+                if hasattr(v, "strftime"):
+                    return v.strftime("%Y-%m-%d %H:%M:%S")
+            except Exception:
+                return str(v)
+            return ""
+
+        for rec in rows:
+            ws.cell(row=ridx, column=1,  value=str(rec["codigo"] or ""))
+            ws.cell(row=ridx, column=2,  value=str(rec["categoria"] or ""))
+            ws.cell(row=ridx, column=3,  value=str(rec["subcategoria"] or ""))
+            ws.cell(row=ridx, column=4,  value=str(rec["estado"] or ""))
+            ws.cell(row=ridx, column=5,  value=str(rec["responsable"] or ""))
+            ws.cell(row=ridx, column=6,  value=str(rec.get("area_institucional") or ""))
+            ws.cell(row=ridx, column=7,  value=as_date_seg(rec["fecha_creacion"]))
+            ws.cell(row=ridx, column=8,  value=as_date_seg(rec["fecha_cierre"]))
+            ws.cell(row=ridx, column=9,  value=as_date_seg(rec.get("seg_fecha")))
+            ws.cell(row=ridx, column=10, value=str(rec.get("seg_usuario") or ""))
+            ws.cell(row=ridx, column=11, value=str(rec.get("seg_area") or ""))
+            ws.cell(row=ridx, column=12, value=str(rec.get("seg_accion") or ""))
+            ws.cell(row=ridx, column=13, value=str(rec.get("seg_estado_anterior") or ""))
+            ws.cell(row=ridx, column=14, value=str(rec.get("seg_estado_nuevo") or ""))
+            ws.cell(row=ridx, column=15, value=str(rec.get("seg_observacion") or ""))
+            ridx += 1
+
+        for col in range(1, len(hdr) + 1):
+            col_letter = get_column_letter(col)
+            max_len = 10
+            for row in ws.iter_rows(min_row=1, max_row=min(ridx, 500)):
+                cel = row[col - 1]
+                vl = getattr(cel, "value", None)
+                ln = len(str(vl)) if vl is not None else 0
+                if ln > max_len:
+                    max_len = ln
+            ws.column_dimensions[col_letter].width = min(max(max_len + 2, 10), 60)
+
+        stream = BytesIO()
+        wb.save(stream)
+        stream.seek(0)
+
+        filename = "reporte_seguimiento_mmq_{}.xlsx".format(
+            datetime.now(get_tz()).strftime("%Y%m%d_%H%M")
+        )
+
+        rp = Response(
+            stream.read(),
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        rp.headers["Content-Disposition"] = 'attachment; filename="{}"'.format(filename.replace('"', ""))
+        return rp
+
 
 app = create_app()
 
