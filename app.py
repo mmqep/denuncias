@@ -1367,6 +1367,12 @@ def register_admin_routes(bp):
             for a in archivos:
                 a['url_temporal'] = obtener_url_archivo_b2(a['nombre_guardado'], expiracion_segundos=86400)
 
+            cur.execute(
+                "SELECT COUNT(*) AS cnt FROM archivos_adjuntos WHERE denuncia_id=%s AND contexto='gestion'",
+                (did,),
+            )
+            tiene_evidencia_gestion = (cur.fetchone() or {}).get("cnt", 0) > 0
+
             if rol == "AdministradorGlobal":
 
                 cur.execute(
@@ -1400,6 +1406,7 @@ def register_admin_routes(bp):
             rol=rol,
             reasign_areas=reasign_areas,
             reasign_admins=reasign_admins,
+            tiene_evidencia_gestion=tiene_evidencia_gestion,
         )
 
     @bp.route("/denuncias/<int:did>/asignar", methods=["POST"])
@@ -1743,6 +1750,37 @@ def register_admin_routes(bp):
                 area_id=session.get("area_id") or doc.get("area_id"),
             )
 
+            if tipo == "gestion":
+                from cloud_storage import subir_archivo_b2
+                for fobj in request.files.getlist("evidencia_gestion"):
+                    if not fobj or not fobj.filename:
+                        continue
+                    fname_arch = secure_filename(os.path.basename(fobj.filename))
+                    if not fname_arch or not allowed_file(fname_arch):
+                        continue
+                    fobj.seek(0, os.SEEK_END)
+                    tam_arch = fobj.tell()
+                    if tam_arch > MAX_UPLOAD_SIZE_BYTES:
+                        flash("Un archivo de evidencia excedió el tamaño máximo y fue omitido.", "warning")
+                        continue
+                    fobj.seek(0)
+                    mime_arch = getattr(fobj, "mimetype", None) or ""
+                    archivo_url, nombre_guardado = subir_archivo_b2(fobj, fname_arch)
+                    if archivo_url:
+                        with conn.cursor() as cur_arch:
+                            cur_arch.execute(
+                                """
+                                INSERT INTO archivos_adjuntos (
+                                  denuncia_id, nombre_original, nombre_guardado, ruta,
+                                  tipo_mime, tamano, fecha_creacion, contexto
+                                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                                """,
+                                (did, fname_arch, nombre_guardado, archivo_url,
+                                 mime_arch, tam_arch, now_local(), "gestion"),
+                            )
+                    else:
+                        flash("No se pudo guardar un archivo de evidencia en la nube.", "warning")
+
             conn.commit()
             flash("Registro de seguimiento agregado.", "success")
 
@@ -1793,6 +1831,22 @@ def register_admin_routes(bp):
             else:
                 flash("Transición de estado no permitida para su perfil.", "danger")
             return redirect(url_for("admin_denuncias.admin_detalle", did=did))
+
+        if nuevo == "Solucionada" and rol == "Responsable":
+            with conn.cursor() as cur_chk:
+                cur_chk.execute(
+                    "SELECT COUNT(*) AS cnt FROM archivos_adjuntos WHERE denuncia_id=%s AND contexto='gestion'",
+                    (did,),
+                )
+                cnt_ev = (cur_chk.fetchone() or {}).get("cnt", 0)
+            if not cnt_ev:
+                flash(
+                    "Para registrar el expediente como «Solucionada» debe adjuntar al menos "
+                    "una evidencia de la gestión realizada. Use el apartado «Gestión realizada "
+                    "ante el ciudadano» y adjunte fotografías o documentos de respaldo.",
+                    "danger",
+                )
+                return redirect(url_for("admin_denuncias.admin_detalle", did=did))
 
         fecha_cierre = doc["fecha_cierre"]
 
@@ -2811,7 +2865,7 @@ def register_admin_routes(bp):
             FROM denuncias d
             LEFT JOIN usuarios u ON u.id = d.usuario_asignado_id
             WHERE d.reasignado_por_id = %s 
-            AND d.fecha_reasignacion > DATE_SUB(NOW(), INTERVAL 48 HOUR)
+            AND d.fecha_reasignacion > datetime('now', '-48 hours')
             AND d.responsable_anterior_id IS NOT NULL
             ORDER BY d.fecha_reasignacion DESC
         """
