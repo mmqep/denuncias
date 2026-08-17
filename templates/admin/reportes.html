@@ -4,9 +4,13 @@
 {% block body %}
 
 <div class="report-actions">
-  <a class="btn btn-primary btn-large" href="{{ url_for('admin_denuncias.excel_report') }}">Exportar Excel</a>
-  <span class="hint-inline">Incluye: código, categoría, subcategoría, prioridad, estado, responsable y fechas de creación/cierre según alcance de su rol.</span>
+  <a class="btn btn-primary btn-large" href="{{ url_for('admin_denuncias.excel_report') }}">Exportar Excel (bandeja)</a>
+  <a class="btn btn-outline btn-large" href="{{ url_for('admin_denuncias.excel_report_seguimiento') }}">Exportar Excel (con seguimiento)</a>
 </div>
+<p class="hint-inline" style="margin-bottom:1.25rem;">
+  <strong>Bandeja:</strong> una fila por expediente — código, categoría, estado, responsable y fechas.<br>
+  <strong>Con seguimiento:</strong> una fila por cada entrada del historial — incluye acción, usuario, estado anterior/nuevo y observación.
+</p>
 
 <div class="card table-card spacing-top">
   <h2 class="card-title">Cantidad por estado</h2>
