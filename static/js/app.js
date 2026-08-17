@@ -202,6 +202,11 @@ window.MMQ_denunciasInit = function () {
     }
 
     formDn.addEventListener("submit", function () {
+      var btnEnviar = document.getElementById("btn-enviar-registro");
+      if (btnEnviar) {
+        btnEnviar.disabled = true;
+        btnEnviar.textContent = "Enviando…";
+      }
       if (anonChk && anonChk.checked && datosFld) {
         datosFld.querySelectorAll("input").forEach(function (inp) {
           inp.value = "";
