@@ -6,7 +6,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
-from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from pdf_comprobante import BORDER, MMQ_BLUE, MMQ_BLUE_LIGHT, MUTED, _cargar_logo, _esc_xml, _fmt_dt
 
@@ -283,12 +283,94 @@ def construir_pdf_reporte_bandeja(
     return out
 
 
+_SELLO_URL = (
+    "https://mercadomayorista.quito.gob.ec"
+    "/wp-content/uploads/2026/06/Recurso-2PC-MAYORISTA-scaled.webp"
+)
+
+
+def _cargar_sello(max_cm=2.2):
+    """Descarga el sello institucional MMQEP y lo devuelve como Image de ReportLab."""
+    try:
+        import urllib.request
+        from PIL import Image as PILImage
+        from reportlab.lib.utils import ImageReader
+        req = urllib.request.Request(_SELLO_URL, headers={"User-Agent": "MMQEP-PortalDenuncias/1.0"})
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            raw = resp.read()
+        pil = PILImage.open(BytesIO(raw)).convert("RGBA")
+        bio = BytesIO()
+        pil.save(bio, format="PNG")
+        bio.seek(0)
+        ir = ImageReader(bio)
+        w, h = ir.getSize()
+        esc = min((max_cm * cm) / float(w), (max_cm * cm) / float(h), 1.0)
+        bio.seek(0)
+        return Image(ImageReader(bio), width=w * esc, height=h * esc)
+    except Exception:
+        return None
+
+
+def _cargar_mapa_osm(lat, lon, zoom=17):
+    """
+    Descarga un mapa estático de OpenStreetMap con marcador rojo en lat/lon.
+    Devuelve Image de ReportLab o None si falla.
+    """
+    try:
+        import math
+        import urllib.request
+        from PIL import Image as PILImage, ImageDraw
+        from reportlab.lib.utils import ImageReader
+
+        # -- tile único centrado en la coordenada --
+        n = 2.0 ** zoom
+        tx = int((float(lon) + 180.0) / 360.0 * n)
+        lat_r = math.radians(float(lat))
+        ty = int((1.0 - math.log(math.tan(lat_r) + 1.0 / math.cos(lat_r)) / math.pi) / 2.0 * n)
+
+        url = "https://tile.openstreetmap.org/{}/{}/{}.png".format(zoom, tx, ty)
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "MMQEP-PortalDenuncias/1.0 (denuncias.mmqep.gob.ec)"},
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            raw = resp.read()
+
+        tile = PILImage.open(BytesIO(raw)).convert("RGBA")
+        tw_px, th_px = tile.size  # normalmente 256x256
+
+        # Calcular posición en píxeles dentro del tile
+        lon_f = (float(lon) + 180.0) / 360.0 * n - tx
+        lat_r2 = math.radians(float(lat))
+        lat_f = (1.0 - math.log(math.tan(lat_r2) + 1.0 / math.cos(lat_r2)) / math.pi) / 2.0 * n - ty
+        px = int(lon_f * tw_px)
+        py = int(lat_f * th_px)
+
+        # Dibujar marcador rojo
+        draw = ImageDraw.Draw(tile)
+        r = 7
+        draw.ellipse([(px - r, py - r), (px + r, py + r)], fill=(220, 38, 38, 220), outline=(255, 255, 255, 255))
+        draw.ellipse([(px - 3, py - 3), (px + 3, py + 3)], fill=(255, 255, 255, 255))
+
+        bio = BytesIO()
+        tile.save(bio, format="PNG")
+        bio.seek(0)
+        ir = ImageReader(bio)
+        iw, ih = ir.getSize()
+        max_w = 10 * cm
+        esc = min(max_w / float(iw), 1.0)
+        bio.seek(0)
+        return Image(ImageReader(bio), width=iw * esc, height=ih * esc)
+    except Exception:
+        return None
+
+
 def construir_pdf_resumen_expediente(d_row, adjuntos, *, generado_por, fecha_emision):
     """
     PDF de 4 secciones (sin historial) para descarga desde el panel:
     1. Resumen del Caso
     2. Datos del Denunciante
-    3. Ubicación del Hecho
+    3. Ubicación del Hecho  (imagen de mapa OSM con marcador)
     4. Descripción y Evidencias
     """
     buf = BytesIO()
@@ -305,10 +387,8 @@ def construir_pdf_resumen_expediente(d_row, adjuntos, *, generado_por, fecha_emi
     styles = getSampleStyleSheet()
     st_title = ParagraphStyle("resTitle", parent=styles["Heading1"], fontSize=13,
                               textColor=colors.white, spaceAfter=2, leading=16)
-    st_h2 = ParagraphStyle("resH2", parent=styles["Heading2"], fontSize=11,
-                            textColor=MMQ_BLUE_LIGHT, spaceBefore=10, spaceAfter=5)
     st_h3 = ParagraphStyle("resH3", parent=styles["Normal"], fontSize=10,
-                            textColor=MMQ_BLUE, fontName="Helvetica-Bold", spaceBefore=6, spaceAfter=4)
+                            textColor=MMQ_BLUE, fontName="Helvetica-Bold", spaceBefore=8, spaceAfter=4)
     st_norm = ParagraphStyle("resN", parent=styles["Normal"], fontSize=9,
                              textColor=colors.black, leading=12)
     st_small = ParagraphStyle("resS", parent=styles["Normal"], fontSize=8,
@@ -317,16 +397,17 @@ def construir_pdf_resumen_expediente(d_row, adjuntos, *, generado_por, fecha_emi
                                textColor=MUTED, leading=12, fontName="Helvetica-Oblique")
 
     flow = []
-    logo = _cargar_logo()
+    sello = _cargar_sello()
     tw = doc.width
 
+    # ── Encabezado ───────────────────────────────────────────────────────
     titulo_hdr = (
         "<b>Expediente {}</b><br/>"
         "<font size='8' color='#e2e8f0'>Mercado Mayorista Quitumbe — MMQEP · Sistema de denuncias y quejas</font>"
     ).format(_esc_xml(cod))
-    if logo:
-        lw = logo.drawWidth + 0.35 * cm
-        hdr_tbl = Table([[logo, Paragraph(titulo_hdr, st_title)]], colWidths=[lw, tw - lw])
+    if sello:
+        sw = sello.drawWidth + 0.35 * cm
+        hdr_tbl = Table([[sello, Paragraph(titulo_hdr, st_title)]], colWidths=[sw, tw - sw])
     else:
         hdr_tbl = Table(
             [[Paragraph("<b>MMQEP</b>", st_title), Paragraph(titulo_hdr, st_title)]],
@@ -350,9 +431,10 @@ def construir_pdf_resumen_expediente(d_row, adjuntos, *, generado_por, fecha_emi
     flow.append(Spacer(1, 0.25 * cm))
 
     def _tabla_datos(filas):
+        # IMPORTANTE: escapar solo el contenido de k/v, no las etiquetas <b>
         tdata = [
-            [Paragraph(_esc_xml("<b>{}</b>".format(k)), st_small),
-             Paragraph(_esc_xml(str(v or "—")), st_norm)]
+            [Paragraph("<b>{}</b>".format(_esc_xml(str(k))), st_small),
+             Paragraph(_esc_xml(str(v) if v is not None else "—"), st_norm)]
             for k, v in filas
         ]
         t = Table(tdata, colWidths=[4.5 * cm, tw - 4.5 * cm])
@@ -373,17 +455,17 @@ def construir_pdf_resumen_expediente(d_row, adjuntos, *, generado_por, fecha_emi
     if hora and len(hora) == 8 and hora[2] == ":":
         hora = hora[:5]
     resumen = [
-        ("Estado",              d_row.get("estado")),
-        ("Categoría",           d_row.get("categoria")),
-        ("Subcategoría",        d_row.get("subcategoria")),
-        ("Área institucional",  d_row.get("area_nombre")),
-        ("Responsable",         d_row.get("asignado_nombres") or d_row.get("asignado")),
-        ("Fecha del hecho",     str(d_row.get("fecha_hecho") or "—")),
-        ("Hora del hecho",      hora),
-        ("Involucrado(s)",      d_row.get("involucrado")),
-        ("Registro ciudadano",  _fmt_dt(d_row.get("fecha_creacion"))),
+        ("Estado",               d_row.get("estado")),
+        ("Categoría",            d_row.get("categoria")),
+        ("Subcategoría",         d_row.get("subcategoria")),
+        ("Área institucional",   d_row.get("area_nombre")),
+        ("Responsable",          d_row.get("asignado_nombres") or d_row.get("asignado")),
+        ("Fecha del hecho",      str(d_row.get("fecha_hecho") or "—")),
+        ("Hora del hecho",       hora),
+        ("Involucrado(s)",       d_row.get("involucrado")),
+        ("Registro ciudadano",   _fmt_dt(d_row.get("fecha_creacion"))),
         ("Última actualización", _fmt_dt(d_row.get("fecha_actualizacion"))),
-        ("Fecha de cierre",     _fmt_dt(d_row.get("fecha_cierre")) if d_row.get("fecha_cierre") else "—"),
+        ("Fecha de cierre",      _fmt_dt(d_row.get("fecha_cierre")) if d_row.get("fecha_cierre") else "—"),
     ]
     flow.append(_tabla_datos(resumen))
     flow.append(Spacer(1, 0.3 * cm))
@@ -407,12 +489,21 @@ def construir_pdf_resumen_expediente(d_row, adjuntos, *, generado_por, fecha_emi
 
     # ── 3. Ubicación del Hecho ───────────────────────────────────────────
     flow.append(Paragraph("3. Ubicación del Hecho", st_h3))
-    ub_filas = [("Dirección / referencia", d_row.get("ubicacion") or "—")]
+    flow.append(_tabla_datos([("Dirección / referencia", d_row.get("ubicacion") or "—")]))
+    flow.append(Spacer(1, 0.2 * cm))
     lat = d_row.get("latitud")
     lon = d_row.get("longitud")
     if lat and lon:
-        ub_filas.append(("Coordenadas", "{}, {}".format(lat, lon)))
-    flow.append(_tabla_datos(ub_filas))
+        mapa_img = _cargar_mapa_osm(lat, lon)
+        if mapa_img:
+            flow.append(mapa_img)
+        else:
+            flow.append(Paragraph(
+                "Coordenadas registradas: {}, {} (mapa no disponible al momento de la emisión).".format(lat, lon),
+                st_italic,
+            ))
+    else:
+        flow.append(Paragraph("No se registraron coordenadas en esta denuncia.", st_italic))
     flow.append(Spacer(1, 0.3 * cm))
 
     # ── 4. Descripción y Evidencias ──────────────────────────────────────
