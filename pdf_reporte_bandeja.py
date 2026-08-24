@@ -311,57 +311,93 @@ def _cargar_sello(max_cm=2.2):
         return None
 
 
-def _cargar_mapa_osm(lat, lon, zoom=17):
+_TILE_SERVERS = [
+    "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+    "https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+    "https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png",
+    "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+]
+
+_pdf_log = __import__("logging").getLogger("mmqep.pdf")
+
+
+def _fetch_tile(z, x, y):
+    """Intenta descargar un tile de múltiples servidores. Devuelve bytes o None."""
+    import urllib.request
+    headers = {"User-Agent": "MMQEP-PortalDenuncias/1.0 (denuncias.mmqep.gob.ec)"}
+    for tmpl in _TILE_SERVERS:
+        url = tmpl.format(z=z, x=x, y=y)
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                data = resp.read()
+            if data and len(data) > 200:
+                return data
+        except Exception:
+            continue
+    return None
+
+
+def _cargar_mapa_osm(lat, lon, zoom=16):
     """
-    Descarga un mapa estático de OpenStreetMap con marcador rojo en lat/lon.
-    Devuelve Image de ReportLab o None si falla.
+    Compone una cuadrícula 3×3 de tiles centrada en lat/lon con un marcador rojo.
+    Devuelve Image de ReportLab o None si no se puede descargar ningún tile.
     """
     try:
         import math
-        import urllib.request
         from PIL import Image as PILImage, ImageDraw
         from reportlab.lib.utils import ImageReader
 
-        # -- tile único centrado en la coordenada --
         n = 2.0 ** zoom
-        tx = int((float(lon) + 180.0) / 360.0 * n)
+        cx = int((float(lon) + 180.0) / 360.0 * n)
         lat_r = math.radians(float(lat))
-        ty = int((1.0 - math.log(math.tan(lat_r) + 1.0 / math.cos(lat_r)) / math.pi) / 2.0 * n)
+        cy = int((1.0 - math.log(math.tan(lat_r) + 1.0 / math.cos(lat_r)) / math.pi) / 2.0 * n)
 
-        url = "https://tile.openstreetmap.org/{}/{}/{}.png".format(zoom, tx, ty)
-        req = urllib.request.Request(
-            url,
-            headers={"User-Agent": "MMQEP-PortalDenuncias/1.0 (denuncias.mmqep.gob.ec)"},
-        )
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            raw = resp.read()
+        TILE_PX = 256
+        GRID = 3
+        canvas = PILImage.new("RGBA", (TILE_PX * GRID, TILE_PX * GRID), (220, 220, 220, 255))
 
-        tile = PILImage.open(BytesIO(raw)).convert("RGBA")
-        tw_px, th_px = tile.size  # normalmente 256x256
+        tiles_ok = 0
+        for dy in range(GRID):
+            for dx in range(GRID):
+                raw = _fetch_tile(zoom, cx - 1 + dx, cy - 1 + dy)
+                if raw:
+                    try:
+                        tile = PILImage.open(BytesIO(raw)).convert("RGBA")
+                        canvas.paste(tile, (dx * TILE_PX, dy * TILE_PX))
+                        tiles_ok += 1
+                    except Exception:
+                        pass
 
-        # Calcular posición en píxeles dentro del tile
-        lon_f = (float(lon) + 180.0) / 360.0 * n - tx
+        if tiles_ok == 0:
+            _pdf_log.warning("_cargar_mapa_osm: no se descargó ningún tile para lat=%s lon=%s zoom=%s", lat, lon, zoom)
+            return None
+
+        # Posición del marcador dentro del canvas (tile central en posición 1,1)
+        lon_f = (float(lon) + 180.0) / 360.0 * n - cx
         lat_r2 = math.radians(float(lat))
-        lat_f = (1.0 - math.log(math.tan(lat_r2) + 1.0 / math.cos(lat_r2)) / math.pi) / 2.0 * n - ty
-        px = int(lon_f * tw_px)
-        py = int(lat_f * th_px)
+        lat_f = (1.0 - math.log(math.tan(lat_r2) + 1.0 / math.cos(lat_r2)) / math.pi) / 2.0 * n - cy
+        px = int(TILE_PX + lon_f * TILE_PX)
+        py = int(TILE_PX + lat_f * TILE_PX)
 
-        # Dibujar marcador rojo
-        draw = ImageDraw.Draw(tile)
-        r = 7
-        draw.ellipse([(px - r, py - r), (px + r, py + r)], fill=(220, 38, 38, 220), outline=(255, 255, 255, 255))
-        draw.ellipse([(px - 3, py - 3), (px + 3, py + 3)], fill=(255, 255, 255, 255))
+        # Marcador: círculo rojo con borde blanco y punto blanco central
+        draw = ImageDraw.Draw(canvas)
+        r = 10
+        draw.ellipse([(px - r, py - r), (px + r, py + r)], fill=(220, 38, 38, 230), outline=(255, 255, 255, 255))
+        draw.ellipse([(px - 4, py - 4), (px + 4, py + 4)], fill=(255, 255, 255, 255))
 
         bio = BytesIO()
-        tile.save(bio, format="PNG")
+        canvas.save(bio, format="PNG")
         bio.seek(0)
         ir = ImageReader(bio)
         iw, ih = ir.getSize()
-        max_w = 10 * cm
+        max_w = 11 * cm
         esc = min(max_w / float(iw), 1.0)
         bio.seek(0)
         return Image(ImageReader(bio), width=iw * esc, height=ih * esc)
-    except Exception:
+
+    except Exception as exc:
+        _pdf_log.warning("_cargar_mapa_osm: error inesperado: %s", exc)
         return None
 
 
