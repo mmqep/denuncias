@@ -1324,6 +1324,51 @@ def register_admin_routes(bp):
     def admin_reporte_denuncia_externo_pdf(did):
         return _admin_pdf_denuncia_core(did, True)
 
+    @bp.route("/denuncias/<int:did>/resumen.pdf")
+    @login_required
+    def admin_resumen_pdf(did):
+        """PDF de resumen ciudadano (4 secciones, sin historial interno)."""
+        d = cargar_denuncia_por_id(did)
+        if not d:
+            abort(404)
+        if not usuario_puede_ver_denuncia(d, obtener_rol(), session["uid"]):
+            abort(403)
+
+        conn = get_db()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT nombre_original, nombre_guardado, contexto FROM archivos_adjuntos WHERE denuncia_id=%s ORDER BY id",
+                (did,),
+            )
+            adjuntos = cur.fetchall()
+
+        gen = session.get("nombres") or session.get("correo") or "Usuario"
+        fgen = now_local().strftime("%d/%m/%Y %H:%M")
+        cod = (d.get("codigo") or str(did)).replace("/", "-")
+        try:
+            from pdf_reporte_bandeja import construir_pdf_resumen_expediente
+            pdf_bytes = construir_pdf_resumen_expediente(
+                dict(d),
+                adjuntos,
+                generado_por=gen,
+                fecha_emision=fgen,
+            )
+        except ImportError:
+            flash("Instale las dependencias del PDF: pip install reportlab Pillow", "danger")
+            return redirect(url_for("admin_denuncias.admin_detalle", did=did))
+        except Exception:
+            current_app.logger.exception("admin_resumen_pdf")
+            flash("No se pudo generar el PDF en este momento.", "danger")
+            return redirect(url_for("admin_denuncias.admin_detalle", did=did))
+
+        stamp = now_local().strftime("%Y%m%d_%H%M")
+        fname = "MMQEP_{}_resumen_{}.pdf".format(cod, stamp)
+        return Response(
+            pdf_bytes,
+            mimetype="application/pdf",
+            headers={"Content-Disposition": 'attachment; filename="{}"'.format(fname)},
+        )
+
     @bp.route("/denuncias/<int:did>")
     @login_required
     def admin_detalle(did):
