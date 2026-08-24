@@ -14,7 +14,7 @@ equipo institucional gestiona los expedientes a través de un panel administrati
 roles, asignaciones, seguimiento de estados y generación de reportes.
 
 Tecnologías centrales: **Flask · Jinja2 · Turso/libSQL · Backblaze B2 · ReportLab ·
-openpyxl · Leaflet/OpenStreetMap**. Despliegue en **Vercel** (Python serverless).
+openpyxl · Leaflet/OpenStreetMap · smtplib**. Despliegue en **Vercel** (Python serverless).
 
 ---
 
@@ -31,6 +31,7 @@ openpyxl · Leaflet/OpenStreetMap**. Despliegue en **Vercel** (Python serverless
 | Archivos | Backblaze B2 (boto3 vía S3-API) |
 | PDF | ReportLab (comprobante ciudadano + reporte de bandeja) |
 | Excel | openpyxl (exportación de bandeja) |
+| Correo | smtplib SSL/TLS — `mail_service.py` |
 | Autenticación | Sesiones Flask (session), Werkzeug password hashing |
 | Config | python-dotenv (.env) |
 | Zona horaria | pytz — `America/Guayaquil` por defecto |
@@ -44,8 +45,9 @@ openpyxl · Leaflet/OpenStreetMap**. Despliegue en **Vercel** (Python serverless
 Quejas_Vercel/
 ├── app.py                   # Toda la lógica de la aplicación (~2500 líneas)
 ├── db.py                    # Shim PyMySQL→libSQL (CursorWrapper, ConnWrapper)
-├── config.py                # Variables de entorno; detección Turso vs MariaDB local
+├── config.py                # Variables de entorno; detección Turso vs MariaDB local; SMTP
 ├── cloud_storage.py         # Subida/lectura en Backblaze B2 (compresión automática)
+├── mail_service.py          # Notificaciones SMTP al Responsable asignado
 ├── pdf_comprobante.py       # PDF del comprobante para el ciudadano
 ├── pdf_reporte_bandeja.py   # PDF de reporte interno/externo de expediente
 ├── build_templates.py       # Pre-build: embebe templates en _templates_cache.py
@@ -72,7 +74,7 @@ Quejas_Vercel/
         ├── detalle_denuncia.html  # Vista individual + mapa + historial
         ├── usuarios.html    # CRUD de usuarios institucionales
         ├── usuario_editar.html
-        ├── categorias.html  # CRUD categorías/subcategorías
+        ├── categorias.html  # CRUD categorías/subcategorías (con responsable directo)
         ├── areas.html       # CRUD de áreas y asignación de responsable
         ├── reportes.html    # Estadísticas y exportación
         └── mis_reasignaciones.html  # Historial de reasignaciones del Responsable
@@ -87,7 +89,8 @@ con este mapa antes de editar:
 
 1. **Imports y constantes globales** (líneas ~1–50)
    - `ESTADOS_PERMITIDOS`: lista de estados válidos para las denuncias.
-   - `PRIORIDADES`: `["Baja", "Media", "Alta", "Crítica"]`.
+   - `PRIORIDADES`: `["Baja", "Media", "Alta", "Crítica"]` — existe en código y BD
+     pero **no se muestra en ninguna pantalla** (refactorización visual). No eliminar.
 
 2. **Helpers compartidos** (líneas ~55–420): funciones puras usadas por ambos blueprints:
    - Catálogo público, resolución de área/responsable, reasignación por desactivación,
@@ -130,10 +133,10 @@ con este mapa antes de editar:
 1. **Login** (`/denuncias/admin/login`) — autenticación por correo y contraseña.
 2. **Dashboard** (`/denuncias/admin/dashboard`) — métricas por estado y área.
 3. **Bandeja** (`/denuncias/admin/denuncias`) — lista filtrable de expedientes
-   (filtros por código, estado, prioridad, área, categoría, fecha).
+   (filtros por código, estado, área, categoría, responsable, fecha).
 4. **Detalle** (`/denuncias/admin/denuncias/<id>`) — vista completa: datos del
    expediente, mapa con pin de ubicación, historial de seguimientos, archivos
-   adjuntos, y formularios para cambiar estado/prioridad, asignar área, agregar nota.
+   adjuntos, y formularios para cambiar estado, asignar área, agregar nota.
 5. **Reportes** (`/denuncias/admin/reportes`) — estadísticas y exportación a
    Excel o PDF.
 
@@ -150,7 +153,7 @@ protegen las rutas admin.
 | `AdministradorGlobal` | Todo (sin filtro de área). Puede hacer todo lo que `Administrador` más ver cualquier expediente. |
 | `Administrador` | Bandeja completa, asignar expedientes, gestionar usuarios/áreas/categorías, cambiar estados, cerrar casos. |
 | `AdminCierre` | Igual que `AdministradorGlobal` en visibilidad; rol especializado para cierre de expedientes. |
-| `Responsable` | Solo ve expedientes de su `area_id` (o asignados directamente a él). Puede agregar seguimientos, reasignar a otra área. |
+| `Responsable` | Ve expedientes asignados directamente a él (`usuario_asignado_id = uid`) O expedientes de su área sin asignado (`area_id = ua AND usuario_asignado_id IS NULL`). Puede agregar seguimientos, reasignar a otra área. |
 | `Supervisor` | Solo ve expedientes de su `area_id`. Sin capacidad de edición (lectura de área). |
 | `Consulta` | Lectura de toda la bandeja (sin filtro de área), sin modificar estados ni asignar. |
 
@@ -172,7 +175,7 @@ asignados a él se mueven a un candidato válido.
 |---|---|
 | `areas` | Unidades organizativas (una sola por responsable) |
 | `categorias` | Tipos de denuncia (con campo `orden`) |
-| `subcategorias` | Subtipo de categoría; tiene `area_id_principal` para asignación automática |
+| `subcategorias` | Subtipo de categoría; tiene `area_id_principal` Y `usuario_id_principal` para asignación directa |
 | `usuarios` | Personal institucional; `rol`, `area_id`, `activo` |
 | `denuncias` | Expedientes; incluye snapshot de `categoria`/`subcategoria` como texto |
 | `seguimientos` | Auditoría append-only de cada expediente |
@@ -186,6 +189,8 @@ Invariantes clave:
 - `PRAGMA foreign_keys=ON` se activa por cada conexión en `connect_db()`.
 - Código único: formato `MMQ-XXXXXXXX` (8 alfanuméricos mayúsculos), generado con
   reintentos en `codigo_denuncia_unico()`.
+- `subcategorias.usuario_id_principal` — si está definido, la denuncia se asigna
+  directamente a ese usuario (y a su área) en lugar de usar `area_id_principal`.
 
 **`db.py` — shim de compatibilidad**:
 - Traduce `%s` → `?` en tiempo de ejecución.
@@ -195,6 +200,16 @@ Invariantes clave:
 - `ConnWrapper.commit()` llama `conn.commit()` (en Turso remoto envía los cambios).
 
 No usar sintaxis MySQL exclusiva en `app.py` (p. ej., `IF()` → usar `CASE WHEN`).
+
+---
+
+## Campo Prioridad — importante
+
+El campo `denuncias.prioridad` existe en la base de datos y toda la lógica interna
+lo mantiene (INSERT, filtros backend, `PRIORIDADES` en `app.py`). **No se muestra
+en ninguna pantalla**: se eliminó de dashboard, bandeja, detalle, reasignaciones,
+PDFs, Excel y correos como parte de una refactorización visual. No reintroducir en
+templates ni en documentos generados sin instrucción explícita.
 
 ---
 
@@ -225,6 +240,23 @@ No usar sintaxis MySQL exclusiva en `app.py` (p. ej., `IF()` → usar `CASE WHEN
 ### Excel (openpyxl)
 - Generado dentro de la ruta `/reportes/excel` en `app.py`.
 - Aplica los mismos filtros de rol que la bandeja.
+- Columnas: código, categoría, subcategoría, estado, responsable cuenta, área institucional,
+  fecha creación, fecha cierre. (Prioridad eliminada de la exportación.)
+
+### Correo electrónico (`mail_service.py`)
+- Envía notificación HTML al Responsable cuando se registra una denuncia y queda
+  asignada automáticamente.
+- Usa `smtplib.SMTP_SSL` (puerto 465) o STARTTLS según `SMTP_USE_SSL`.
+- El sello institucional se descarga en tiempo de envío desde la URL oficial y se
+  incrusta como base64 para evitar bloqueos de hotlinking en clientes de correo.
+- `enviar_correo()` nunca lanza excepciones — siempre retorna `True`/`False`.
+- Todos los pasos (configuración, conexión, autenticación, envío) quedan en logs
+  del logger `mmqep.mail` (nivel DEBUG). El logger tiene `StreamHandler` explícito
+  para garantizar visibilidad en Vercel.
+- El resultado del intento (éxito o fallo) se registra en `seguimientos` con
+  acción `NOTIFICACION_CORREO` — visible en el historial del expediente.
+- Variables requeridas: `SMTP_SERVER`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`,
+  `SMTP_FROM_EMAIL`. Opcionales: `SMTP_USE_SSL`, `SMTP_FROM_NAME`, `PORTAL_URL`.
 
 ---
 
@@ -232,13 +264,19 @@ No usar sintaxis MySQL exclusiva en `app.py` (p. ej., `IF()` → usar `CASE WHEN
 
 Vercel ejecuta la app como función Python serverless (`api/index.py` o `app.py`).
 
+El deploy es **automático vía GitHub**: al hacer `git push` a `main`, Vercel detecta
+el cambio y despliega sin intervención manual.
+
 **Problema crítico con templates**: el filesystem de Vercel es de solo lectura y las
 templates no quedan en el bundle si se usan con `FileSystemLoader`. La solución es:
-1. Antes de cada `git push`, ejecutar `python build_templates.py` → genera
-   `_templates_cache.py` con todas las templates embebidas como strings.
-2. Commit del archivo generado: `git add _templates_cache.py && git commit`.
-3. En `create_app()`, se intenta importar `_templates_cache.TEMPLATES` y se usa
+1. El `buildCommand` en `vercel.json` ejecuta `python build_templates.py`
+   automáticamente en cada deploy → genera `_templates_cache.py`.
+2. En `create_app()`, se intenta importar `_templates_cache.TEMPLATES` y se usa
    `DictLoader`; si no existe, cae en `FileSystemLoader` (desarrollo local).
+
+> Los archivos HTML de `templates/` se deben commitear siempre.
+> Vercel regenera `_templates_cache.py` durante el build — no es necesario
+> generarlo manualmente antes de cada push.
 
 **`vercel.json`**:
 ```json
@@ -248,9 +286,6 @@ templates no quedan en el bundle si se usan con `FileSystemLoader`. La solución
   "routes": [{ "src": "/(.*)", "dest": "app.py" }]
 }
 ```
-
-> Siempre ejecutar `python build_templates.py` y commitear `_templates_cache.py`
-> antes de cualquier deploy cuando se modifiquen templates.
 
 ---
 
@@ -278,6 +313,16 @@ B2_ACCOUNT_ID=
 B2_APPLICATION_KEY=
 B2_BUCKET_NAME=
 B2_ENDPOINT_URL=
+
+# Correo (SMTP) — servidor institucional SSL/TLS puerto 465
+SMTP_SERVER=mail.mmqep.gob.ec
+SMTP_PORT=465
+SMTP_USERNAME=notdenuncias@mmqep.gob.ec
+SMTP_PASSWORD=<contraseña-desde-variables-de-entorno>
+SMTP_USE_SSL=True
+SMTP_FROM_NAME=Sistema de Denuncias MMQEP
+SMTP_FROM_EMAIL=notdenuncias@mmqep.gob.ec
+PORTAL_URL=https://denuncias.mmqep.gob.ec/denuncias/admin/
 ```
 
 ### Comandos
@@ -295,10 +340,6 @@ turso db shell <db-name> < schema.sql
 
 # Arrancar servidor de desarrollo → http://127.0.0.1:5000/denuncias/
 python app.py
-
-# Pre-deploy: embeber templates para Vercel
-python build_templates.py
-git add _templates_cache.py
 ```
 
 No hay test suite, no hay linter, no hay sistema de migraciones. Para cambios de
@@ -327,3 +368,8 @@ schema: editar `schema.sql` y re-ejecutarlo contra Turso con `turso db shell`.
 - **Compatibilidad MariaDB local**: `config.py` detecta si hay `TURSO_DATABASE_URL`; si
   no, usa parámetros MariaDB/PyMySQL (solo para desarrollo sin Turso). La app en
   producción siempre usa Turso.
+- **La contraseña SMTP nunca va en código**: se obtiene exclusivamente desde la
+  variable de entorno `SMTP_PASSWORD`. Configurar en Vercel → Settings → Environment Variables.
+- **Responsable directo por subcategoría**: `subcategorias.usuario_id_principal`
+  permite asignar un usuario específico (no solo un área) al crear una subcategoría.
+  Tiene precedencia sobre `area_id_principal` en la lógica de asignación automática.

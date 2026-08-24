@@ -36,12 +36,6 @@
         {% for e in estados_lista %}<option value="{{ e }}" {{ 'selected' if filtros.get('filtro_estado') == e }}>{{ e }}</option>{% endfor %}
       </select>
     </label>
-    <label>Prioridad
-      <select name="filtro_prioridad">
-        <option value="">— Todas —</option>
-        {% for p in prioridades_lista %}<option value="{{ p }}" {{ 'selected' if filtros.get('filtro_prioridad') == p }}>{{ p }}</option>{% endfor %}
-      </select>
-    </label>
     {% if session.get('rol') in ('Administrador','Consulta') %}
     <label>Responsable
       <select name="filtro_responsable">
@@ -70,7 +64,6 @@
           <th>Anónimo</th>
           <th>Rubro</th>
           <th>Área</th>
-          <th>Prioridad</th>
           <th>Estado</th>
           <th>Responsable</th>
           <th>Ingreso</th>
@@ -84,7 +77,6 @@
           <td>{{ 'Sí' if d.es_anonima else 'No' }}</td>
           <td class="wrap-cell">{{ d.subcategoria or d.categoria }}</td>
           <td class="wrap-cell">{{ d.area_nombre or '—' }}</td>
-          <td><span class="badge">{{ d.prioridad }}</span></td>
           <td>{{ d.estado }}</td>
           <td>{{ d.asignado or '—' }}</td>
           <td>{{ d.fecha_creacion }}</td>

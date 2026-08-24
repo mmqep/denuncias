@@ -49,7 +49,6 @@
       <h2 class="panel-title">1. Resumen del Caso</h2>
       <dl class="kv">
         <dt>Estado</dt><dd><span class="badge badge-estado">{{ d.estado }}</span></dd>
-        <dt>Prioridad</dt><dd><span class="badge">{{ d.prioridad }}</span></dd>
         <dt>Registro</dt><dd>{% if anon %}Anónimo{% else %}Con datos del denunciante{% endif %}</dd>
         <dt>Categoría</dt><dd>{{ d.categoria }}</dd>
         <dt>Subcategoría</dt><dd>{{ d.subcategoria }}</dd>
@@ -284,10 +283,13 @@
             <button type="submit" class="btn btn-outline btn-small">Guardar observación</button>
           </form>
 
-          <form method="post" action="{{ url_for('admin_denuncias.admin_seguimiento', did=d.id) }}" class="stack-form subcard">
+          <form method="post" action="{{ url_for('admin_denuncias.admin_seguimiento', did=d.id) }}" class="stack-form subcard" enctype="multipart/form-data">
             <h4 class="subsection">Gestión realizada ante el ciudadano</h4>
             <input type="hidden" name="tipo_gestion" value="gestion">
             <label>Describe la gestión pública efectuada<textarea name="texto_seguimiento" rows="3" placeholder="Acciones comunicadas al denunciante, visitas insitu, llamadas…"></textarea></label>
+            <label>Evidencia de gestión (foto, documento PDF — obligatorio para marcar como «Solucionada»)
+              <input type="file" name="evidencia_gestion" accept=".png,.jpg,.jpeg,.pdf" multiple>
+            </label>
             <button type="submit" class="btn btn-accent btn-small">Registrar gestión</button>
           </form>
         {% else %}
@@ -309,7 +311,7 @@
       <!-- Cambiar estado -->
       <div class="card form-card spacing-top">
           <h3 class="card-title">Estado del expediente</h3>
-          <form method="post" action="{{ url_for('admin_denuncias.admin_cambia_estado', did=d.id) }}" class="stack-form">
+          <form id="form-cambiar-estado" method="post" action="{{ url_for('admin_denuncias.admin_cambia_estado', did=d.id) }}" class="stack-form">
               <label>Nuevo estado
                   {% if rol == 'AdministradorGlobal' or rol == 'AdminCierre' %}
                   <!-- Administrador Global y AdminCierre: ven todos los estados -->
@@ -320,7 +322,7 @@
                   </select>
                   {% elif rol == 'Responsable' %}
                   <!-- Responsable: solo puede cambiar a En atención o Solucionada -->
-                  <select name="estado" required>
+                  <select id="select-nuevo-estado" name="estado" required>
                       <option value="" disabled>Elija transición</option>
                       <option value="En atención" {% if d.estado == 'En atención' %}selected{% endif %}>En atención</option>
                       <option value="Solucionada" {% if d.estado == 'Solucionada' %}selected{% endif %}>Solucionada</option>
@@ -544,6 +546,29 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 </script>
+
+{% if rol == 'Responsable' %}
+<script>
+(function () {
+  var tieneEvidencia = {{ tiene_evidencia_gestion | tojson }};
+  var selectEstado = document.getElementById("select-nuevo-estado");
+  var formEstado   = document.getElementById("form-cambiar-estado");
+  if (!selectEstado || !formEstado) return;
+
+  formEstado.addEventListener("submit", function (e) {
+    if (selectEstado.value === "Solucionada" && !tieneEvidencia) {
+      e.preventDefault();
+      alert(
+        "Para marcar el expediente como «Solucionada» debe registrar primero " +
+        "al menos una evidencia de gestión.\n\n" +
+        "Use el apartado «Gestión realizada ante el ciudadano» y adjunte " +
+        "fotografías o documentos de respaldo."
+      );
+    }
+  });
+})();
+</script>
+{% endif %}
 
 <div class="form-actions spacing-top" style="margin-top: 20px;">
   <a href="{{ url_for('admin_denuncias.admin_lista_denuncias') }}" class="btn btn-ghost">← Volver a bandeja</a>

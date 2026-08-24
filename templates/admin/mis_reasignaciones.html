@@ -20,7 +20,6 @@
                     <th>Código</th>
                     <th>Categoría</th>
                     <th>Estado</th>
-                    <th>Prioridad</th>
                     <th>Reasignada a</th>
                     <th>Fecha reasignación</th>
                     <th>Acciones</th>
@@ -32,7 +31,6 @@
                     <td><code>{{ d.codigo }}</code></td>
                     <td>{{ d.subcategoria or d.categoria }}</td>
                     <td>{{ d.estado }}</td>
-                    <td><span class="badge">{{ d.prioridad }}</span></td>
                     <td>{{ d.reasignado_a or '—' }}</td>
                     <td>{{ d.fecha_reasignacion }}</td>
                     <td>

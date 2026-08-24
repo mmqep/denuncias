@@ -283,32 +283,17 @@ def construir_pdf_reporte_bandeja(
     return out
 
 
-_SELLO_URL = (
-    "https://mercadomayorista.quito.gob.ec"
-    "/wp-content/uploads/2026/06/Recurso-2PC-MAYORISTA-scaled.webp"
-)
-
-
-def _cargar_sello(max_cm=2.2):
-    """Descarga el sello institucional MMQEP y lo devuelve como Image de ReportLab."""
-    try:
-        import urllib.request
-        from PIL import Image as PILImage
-        from reportlab.lib.utils import ImageReader
-        req = urllib.request.Request(_SELLO_URL, headers={"User-Agent": "MMQEP-PortalDenuncias/1.0"})
-        with urllib.request.urlopen(req, timeout=6) as resp:
-            raw = resp.read()
-        pil = PILImage.open(BytesIO(raw)).convert("RGBA")
-        bio = BytesIO()
-        pil.save(bio, format="PNG")
-        bio.seek(0)
-        ir = ImageReader(bio)
-        w, h = ir.getSize()
-        esc = min((max_cm * cm) / float(w), (max_cm * cm) / float(h), 1.0)
-        bio.seek(0)
-        return Image(ImageReader(bio), width=w * esc, height=h * esc)
-    except Exception:
-        return None
+def _cargar_sello_pdf():
+    """
+    Intenta cargar el sello institucional.
+    Primero prueba el logo blanco horizontal (conocido por funcionar en Vercel).
+    Si falla, devuelve None y el encabezado usará texto.
+    """
+    img = _cargar_logo(max_ancho_cm=2.8, max_alto_cm=2.8)
+    if img:
+        return img
+    _pdf_log.warning("_cargar_sello_pdf: no se pudo cargar el logo institucional")
+    return None
 
 
 _TILE_SERVERS = [
@@ -433,7 +418,7 @@ def construir_pdf_resumen_expediente(d_row, adjuntos, *, generado_por, fecha_emi
                                textColor=MUTED, leading=12, fontName="Helvetica-Oblique")
 
     flow = []
-    sello = _cargar_sello()
+    sello = _cargar_sello_pdf()
     tw = doc.width
 
     # ── Encabezado ───────────────────────────────────────────────────────
@@ -525,21 +510,14 @@ def construir_pdf_resumen_expediente(d_row, adjuntos, *, generado_por, fecha_emi
 
     # ── 3. Ubicación del Hecho ───────────────────────────────────────────
     flow.append(Paragraph("3. Ubicación del Hecho", st_h3))
-    flow.append(_tabla_datos([("Dirección / referencia", d_row.get("ubicacion") or "—")]))
-    flow.append(Spacer(1, 0.2 * cm))
     lat = d_row.get("latitud")
     lon = d_row.get("longitud")
+    ub_filas = [("Dirección / referencia", d_row.get("ubicacion") or "—")]
     if lat and lon:
-        mapa_img = _cargar_mapa_osm(lat, lon)
-        if mapa_img:
-            flow.append(mapa_img)
-        else:
-            flow.append(Paragraph(
-                "Coordenadas registradas: {}, {} (mapa no disponible al momento de la emisión).".format(lat, lon),
-                st_italic,
-            ))
-    else:
-        flow.append(Paragraph("No se registraron coordenadas en esta denuncia.", st_italic))
+        ub_filas.append(("Coordenadas GPS", "{}, {}".format(lat, lon)))
+        osm_url = "https://www.openstreetmap.org/?mlat={}&mlon={}&zoom=18".format(lat, lon)
+        ub_filas.append(("Ver en mapa", osm_url))
+    flow.append(_tabla_datos(ub_filas))
     flow.append(Spacer(1, 0.3 * cm))
 
     # ── 4. Descripción y Evidencias ──────────────────────────────────────

@@ -22,7 +22,6 @@
         <tr>
           <th>Código</th>
           <th>Categoría</th>
-          <th>Prioridad</th>
           <th>Estado</th>
           <th>Ingreso</th>
           <th></th>
@@ -33,13 +32,15 @@
         <tr>
           <td><code>{{ r.codigo }}</code></td>
           <td>{{ r.subcategoria or r.categoria }}</td>
-          <td><span class="badge badge-prio">{{ r.prioridad }}</span></td>
           <td>{{ r.estado }}</td>
           <td>{{ r.fecha_creacion }}</td>
-          <td><a class="btn btn-small btn-primary" href="{{ url_for('admin_denuncias.admin_detalle', did=r.id) }}">Ver</a></td>
+          <td style="white-space:nowrap;">
+            <a class="btn btn-small btn-primary" href="{{ url_for('admin_denuncias.admin_detalle', did=r.id) }}">Ver</a>
+            <a class="btn btn-small btn-outline" href="{{ url_for('admin_denuncias.admin_resumen_pdf', did=r.id) }}">Descargar PDF</a>
+          </td>
         </tr>
         {% else %}
-        <tr><td colspan="6" class="muted">No hay registros recientes.</td></tr>
+        <tr><td colspan="5" class="muted">No hay registros recientes.</td></tr>
         {% endfor %}
       </tbody>
     </table>
