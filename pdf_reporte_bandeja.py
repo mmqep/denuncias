@@ -283,6 +283,166 @@ def construir_pdf_reporte_bandeja(
     return out
 
 
+def construir_pdf_resumen_expediente(d_row, adjuntos, *, generado_por, fecha_emision):
+    """
+    PDF de 4 secciones (sin historial) para descarga desde el panel:
+    1. Resumen del Caso
+    2. Datos del Denunciante
+    3. Ubicación del Hecho
+    4. Descripción y Evidencias
+    """
+    buf = BytesIO()
+    cod = (d_row.get("codigo") or str(d_row.get("id", ""))).strip()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=1.4 * cm,
+        rightMargin=1.4 * cm,
+        topMargin=1.1 * cm,
+        bottomMargin=1.1 * cm,
+        title="Expediente {}".format(cod),
+    )
+    styles = getSampleStyleSheet()
+    st_title = ParagraphStyle("resTitle", parent=styles["Heading1"], fontSize=13,
+                              textColor=colors.white, spaceAfter=2, leading=16)
+    st_h2 = ParagraphStyle("resH2", parent=styles["Heading2"], fontSize=11,
+                            textColor=MMQ_BLUE_LIGHT, spaceBefore=10, spaceAfter=5)
+    st_h3 = ParagraphStyle("resH3", parent=styles["Normal"], fontSize=10,
+                            textColor=MMQ_BLUE, fontName="Helvetica-Bold", spaceBefore=6, spaceAfter=4)
+    st_norm = ParagraphStyle("resN", parent=styles["Normal"], fontSize=9,
+                             textColor=colors.black, leading=12)
+    st_small = ParagraphStyle("resS", parent=styles["Normal"], fontSize=8,
+                              textColor=MUTED, leading=10)
+    st_italic = ParagraphStyle("resIt", parent=styles["Normal"], fontSize=9,
+                               textColor=MUTED, leading=12, fontName="Helvetica-Oblique")
+
+    flow = []
+    logo = _cargar_logo()
+    tw = doc.width
+
+    titulo_hdr = (
+        "<b>Expediente {}</b><br/>"
+        "<font size='8' color='#e2e8f0'>Mercado Mayorista Quitumbe — MMQEP · Sistema de denuncias y quejas</font>"
+    ).format(_esc_xml(cod))
+    if logo:
+        lw = logo.drawWidth + 0.35 * cm
+        hdr_tbl = Table([[logo, Paragraph(titulo_hdr, st_title)]], colWidths=[lw, tw - lw])
+    else:
+        hdr_tbl = Table(
+            [[Paragraph("<b>MMQEP</b>", st_title), Paragraph(titulo_hdr, st_title)]],
+            colWidths=[2.8 * cm, tw - 2.8 * cm],
+        )
+    hdr_tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), MMQ_BLUE),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    flow.append(hdr_tbl)
+    flow.append(Spacer(1, 0.25 * cm))
+
+    meta = "<b>Fecha de emisión:</b> {} · <b>Generado por:</b> {}".format(
+        _esc_xml(fecha_emision), _esc_xml(generado_por or "—")
+    )
+    flow.append(Paragraph(meta, st_small))
+    flow.append(Spacer(1, 0.25 * cm))
+
+    def _tabla_datos(filas):
+        tdata = [
+            [Paragraph(_esc_xml("<b>{}</b>".format(k)), st_small),
+             Paragraph(_esc_xml(str(v or "—")), st_norm)]
+            for k, v in filas
+        ]
+        t = Table(tdata, colWidths=[4.5 * cm, tw - 4.5 * cm])
+        t.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.35, BORDER),
+            ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f1f5f9")),
+        ]))
+        return t
+
+    # ── 1. Resumen del Caso ──────────────────────────────────────────────
+    flow.append(Paragraph("1. Resumen del Caso", st_h3))
+    hora = str(d_row.get("hora_hecho") or "—")
+    if hora and len(hora) == 8 and hora[2] == ":":
+        hora = hora[:5]
+    resumen = [
+        ("Estado",              d_row.get("estado")),
+        ("Categoría",           d_row.get("categoria")),
+        ("Subcategoría",        d_row.get("subcategoria")),
+        ("Área institucional",  d_row.get("area_nombre")),
+        ("Responsable",         d_row.get("asignado_nombres") or d_row.get("asignado")),
+        ("Fecha del hecho",     str(d_row.get("fecha_hecho") or "—")),
+        ("Hora del hecho",      hora),
+        ("Involucrado(s)",      d_row.get("involucrado")),
+        ("Registro ciudadano",  _fmt_dt(d_row.get("fecha_creacion"))),
+        ("Última actualización", _fmt_dt(d_row.get("fecha_actualizacion"))),
+        ("Fecha de cierre",     _fmt_dt(d_row.get("fecha_cierre")) if d_row.get("fecha_cierre") else "—"),
+    ]
+    flow.append(_tabla_datos(resumen))
+    flow.append(Spacer(1, 0.3 * cm))
+
+    # ── 2. Datos del Denunciante ─────────────────────────────────────────
+    flow.append(Paragraph("2. Datos del Denunciante", st_h3))
+    if d_row.get("es_anonima"):
+        flow.append(Paragraph(
+            "Denuncia anónima: no se exponen datos personales del ciudadano.",
+            st_italic,
+        ))
+    else:
+        den_filas = [
+            ("Nombres",        d_row.get("nombres_denunciante")),
+            ("Identificación", d_row.get("identificacion_denunciante")),
+            ("Teléfono",       d_row.get("telefono_denunciante")),
+            ("Correo",         d_row.get("correo_denunciante")),
+        ]
+        flow.append(_tabla_datos(den_filas))
+    flow.append(Spacer(1, 0.3 * cm))
+
+    # ── 3. Ubicación del Hecho ───────────────────────────────────────────
+    flow.append(Paragraph("3. Ubicación del Hecho", st_h3))
+    ub_filas = [("Dirección / referencia", d_row.get("ubicacion") or "—")]
+    lat = d_row.get("latitud")
+    lon = d_row.get("longitud")
+    if lat and lon:
+        ub_filas.append(("Coordenadas", "{}, {}".format(lat, lon)))
+    flow.append(_tabla_datos(ub_filas))
+    flow.append(Spacer(1, 0.3 * cm))
+
+    # ── 4. Descripción y Evidencias ──────────────────────────────────────
+    flow.append(Paragraph("4. Descripción y Evidencias", st_h3))
+    desc = (d_row.get("descripcion") or "").strip()
+    flow.append(Paragraph(_esc_xml(desc) if desc else "<i>Sin descripción registrada.</i>", st_norm))
+    flow.append(Spacer(1, 0.2 * cm))
+
+    adj_ciudadano = [a for a in (adjuntos or []) if (a.get("contexto") or "ciudadano") == "ciudadano"]
+    if adj_ciudadano:
+        flow.append(Paragraph("<b>Archivos adjuntos del ciudadano:</b>", st_small))
+        for a in adj_ciudadano:
+            nombre = a.get("nombre_original") or a.get("nombre_guardado") or "—"
+            flow.append(Paragraph("• {}".format(_esc_xml(nombre)), st_norm))
+    else:
+        flow.append(Paragraph("<i>No hay adjuntos registrados por el ciudadano.</i>", st_italic))
+
+    flow.append(Spacer(1, 0.5 * cm))
+    flow.append(Paragraph(
+        "Documento generado electrónicamente desde el sistema MMQEP. "
+        "La información debe manejarse conforme a la normativa institucional de protección de datos personales.",
+        st_small,
+    ))
+
+    doc.build(flow)
+    out = buf.getvalue()
+    buf.close()
+    return out
+
+
 def construir_pdf_reporte_denuncia_individual(
     d_row,
     segs_rows,
