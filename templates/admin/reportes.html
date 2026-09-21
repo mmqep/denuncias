@@ -30,7 +30,18 @@
 /* ── chart container ── */
 .chart-wrap{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:1.1rem 1.3rem;margin-bottom:1.2rem;}
 .chart-wrap h3{margin:0 0 .8rem;font-size:.92rem;color:#003366;font-weight:600;}
-.chart-canvas-box{position:relative;width:100%;max-height:360px;}
+.chart-canvas-box{position:relative;width:100%;}
+/* ── pie / doughnut layout ── */
+.pie-chart-container{display:flex;gap:1.8rem;align-items:flex-start;flex-wrap:wrap;}
+.pie-chart-container .chart-canvas-box{flex:0 1 360px;min-width:220px;}
+.pie-legend{flex:1 1 220px;min-width:180px;display:flex;flex-direction:column;gap:.5rem;padding-top:.25rem;}
+.pie-legend-item{display:flex;align-items:flex-start;gap:.55rem;font-size:.83rem;color:#1e293b;line-height:1.4;word-break:break-word;}
+.pie-legend-dot{flex-shrink:0;width:13px;height:13px;border-radius:3px;margin-top:.18em;}
+@media(max-width:600px){
+  .pie-chart-container{flex-direction:column;}
+  .pie-chart-container .chart-canvas-box{flex:none;width:100%;}
+  .pie-legend{flex:none;width:100%;}
+}
 /* ── dynamic table ── */
 .dyn-table-wrap{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:1.1rem 1.3rem;margin-bottom:1.2rem;}
 .dyn-table-wrap h3{margin:0 0 .8rem;font-size:.92rem;color:#003366;font-weight:600;}
@@ -160,8 +171,11 @@
 {# ── CHART ── #}
 <div class="chart-wrap">
   <h3 id="chart-titulo">Gráfico</h3>
-  <div class="chart-canvas-box">
-    <canvas id="main-chart"></canvas>
+  <div id="pie-chart-container">
+    <div class="chart-canvas-box">
+      <canvas id="main-chart"></canvas>
+    </div>
+    <div id="pie-legend" class="pie-legend" style="display:none;"></div>
   </div>
   <p id="chart-empty" class="muted" style="display:none;margin:.5rem 0 0;">Sin datos para los filtros seleccionados.</p>
 </div>
@@ -310,59 +324,132 @@
 
   /* ── Gráfico ── */
   function cargarGrafico() {
-    var bp = builderParams();
-    var p  = getFilters(bp);
+    var bp   = builderParams();
+    var p    = getFilters(bp);
     var tipo = document.getElementById('b-tipo-grafico').value;
 
     apiFetch(API_GRAFICO, p).then(function(d){
       if(!d || !d.labels) return;
+
       var empty = !d.labels.length;
       document.getElementById('chart-empty').style.display = empty ? '' : 'none';
+      document.getElementById('chart-titulo').textContent = d.grupo_label + ' · ' + d.metrica_label;
 
-      var titulo = d.grupo_label + ' · ' + d.metrica_label;
-      document.getElementById('chart-titulo').textContent = titulo;
+      var canvasBox  = document.querySelector('.chart-canvas-box');
+      var container  = document.getElementById('pie-chart-container');
+      var pieLegend  = document.getElementById('pie-legend');
+      var ctx        = document.getElementById('main-chart').getContext('2d');
+      var isPie      = (tipo === 'pie' || tipo === 'doughnut');
 
-      var ctx = document.getElementById('main-chart').getContext('2d');
       if(chartInstance){ chartInstance.destroy(); chartInstance = null; }
+
+      /* resetear estado visual antes de reconstruir */
+      if(!isPie){
+        container.className = '';
+        canvasBox.style.height    = '';
+        canvasBox.style.maxHeight = '360px';
+        pieLegend.style.display   = 'none';
+        pieLegend.innerHTML       = '';
+      }
+
       if(empty) return;
 
-      var isPie = (tipo === 'pie' || tipo === 'doughnut');
       var bgColors = d.labels.map(function(_,i){ return PALETTE[i % PALETTE.length]; });
+      var total    = d.values.reduce(function(a,b){return a+b;}, 0);
 
-      chartInstance = new Chart(ctx, {
-        type: tipo,
-        data: {
-          labels: d.labels,
-          datasets: [{
-            label: d.metrica_label,
-            data: d.values,
-            backgroundColor: isPie ? bgColors : PALETTE[0],
-            borderColor: isPie ? '#fff' : PALETTE[0],
-            borderWidth: isPie ? 2 : 1,
-            borderRadius: tipo === 'bar' ? 4 : 0,
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: true,
-          plugins: {
-            legend: { display: isPie, position: 'right' },
-            tooltip: {
-              callbacks: {
-                label: function(ctx){
-                  var val = ctx.parsed.y !== undefined ? ctx.parsed.y : ctx.parsed;
-                  var total = d.values.reduce(function(a,b){return a+b;},0);
-                  var pct = total > 0 ? (val/total*100).toFixed(1) : '0.0';
-                  return ' ' + val + ' (' + pct + '%)';
+      if(isPie){
+        /* ── layout para pastel / rosca ── */
+        container.className = 'pie-chart-container';
+
+        /* altura del canvas: entre 280 y 460 px según cantidad de series */
+        var n = d.labels.length;
+        var h = Math.max(280, Math.min(460, 240 + n * 14));
+        canvasBox.style.maxHeight = '';
+        canvasBox.style.height    = h + 'px';
+
+        /* leyenda HTML — texto completo, sin truncar */
+        pieLegend.style.display = 'flex';
+        var legHtml = '';
+        d.labels.forEach(function(lbl, i){
+          var v   = d.values[i];
+          var pct = total > 0 ? (v / total * 100).toFixed(1) : '0.0';
+          legHtml +=
+            '<div class="pie-legend-item">'
+            + '<span class="pie-legend-dot" style="background:' + bgColors[i] + ';"></span>'
+            + '<span>'
+            +   '<span style="font-weight:600;color:' + bgColors[i] + ';">' + escHtml(lbl) + '</span>'
+            +   '<span style="color:#475569;"> — ' + v + ' (' + pct + '%)</span>'
+            + '</span>'
+            + '</div>';
+        });
+        pieLegend.innerHTML = legHtml;
+
+        chartInstance = new Chart(ctx, {
+          type: tipo,
+          data: {
+            labels: d.labels,
+            datasets: [{
+              data: d.values,
+              backgroundColor: bgColors,
+              borderColor: '#ffffff',
+              borderWidth: 2,
+              hoverOffset: 8,
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: function(c){
+                    var v   = c.parsed;
+                    var pct = total > 0 ? (v / total * 100).toFixed(1) : '0.0';
+                    return ' ' + v + ' (' + pct + '%)';
+                  }
                 }
               }
             }
-          },
-          scales: isPie ? {} : {
-            y: { beginAtZero: true, ticks: { precision: 0 } }
           }
-        }
-      });
+        });
+
+      } else {
+        /* ── barras / línea ── */
+        chartInstance = new Chart(ctx, {
+          type: tipo,
+          data: {
+            labels: d.labels,
+            datasets: [{
+              label: d.metrica_label,
+              data: d.values,
+              backgroundColor: PALETTE[0],
+              borderColor: PALETTE[0],
+              borderWidth: 1,
+              borderRadius: tipo === 'bar' ? 4 : 0,
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: function(c){
+                    var v   = c.parsed.y !== undefined ? c.parsed.y : c.parsed;
+                    var pct = total > 0 ? (v / total * 100).toFixed(1) : '0.0';
+                    return ' ' + v + ' (' + pct + '%)';
+                  }
+                }
+              }
+            },
+            scales: {
+              y: { beginAtZero: true, ticks: { precision: 0 } }
+            }
+          }
+        });
+      }
     });
   }
 
