@@ -49,6 +49,25 @@ ESTADOS_PERMITIDOS = [
 
 PRIORIDADES = ["Baja", "Media", "Alta", "Crítica"]
 
+# Agrupaciones y métricas para el módulo de reportes dinámicos
+_AGRUPACIONES_REPORTES = {
+    "estado":          ("d.estado",                                                         "Estado"),
+    "categoria":       ("d.categoria",                                                      "Categoría"),
+    "subcategoria":    ("d.subcategoria",                                                    "Subcategoría"),
+    "area":            ("COALESCE(ar.nombre,'Sin área')",                                   "Área"),
+    "responsable":     ("COALESCE(u.nombres,'Sin asignar')",                                "Responsable"),
+    "mes":             ("strftime('%Y-%m',d.fecha_creacion)",                               "Mes"),
+    "anio":            ("strftime('%Y',d.fecha_creacion)",                                  "Año"),
+    "dia":             ("DATE(d.fecha_creacion)",                                           "Día"),
+    "tipo_denunciante":("CASE WHEN d.es_anonima=1 THEN 'Anónimo' ELSE 'Identificado' END", "Tipo denunciante"),
+}
+
+_METRICAS_REPORTES = {
+    "cantidad": ("COUNT(*)",                                                                                   "Cantidad"),
+    "abiertos": ("SUM(CASE WHEN d.estado NOT IN ('Cerrada','Solucionada') THEN 1 ELSE 0 END)",                 "Casos abiertos"),
+    "cerrados": ("SUM(CASE WHEN d.estado IN ('Cerrada','Solucionada') THEN 1 ELSE 0 END)",                     "Casos cerrados"),
+}
+
 TZ = None
 
 
@@ -1020,6 +1039,77 @@ def register_admin_routes(bp):
         if rol == "Supervisor" and ua:
             return base_filtro + " AND d.area_id IS NOT NULL AND d.area_id = %s", [ua]
         return "AND 1=0", []
+
+    def _where_reportes(rol, uid, args):
+        """Combina visibilidad por rol con filtros de usuario para los endpoints de reportes."""
+        filt, base_params = listar_where_base(rol, uid)
+        params = list(base_params)
+        extra = []
+
+        fd = (args.get("fecha_desde") or "").strip()
+        fh = (args.get("fecha_hasta") or "").strip()
+        if fd:
+            extra.append("AND DATE(d.fecha_creacion) >= %s")
+            params.append(fd)
+        if fh:
+            extra.append("AND DATE(d.fecha_creacion) <= %s")
+            params.append(fh)
+
+        estado = (args.get("estado") or "").strip()
+        if estado == "__abiertas__":
+            extra.append("AND d.estado NOT IN ('Cerrada','Solucionada')")
+        elif estado == "__cerradas__":
+            extra.append("AND d.estado IN ('Cerrada','Solucionada')")
+        elif estado in ESTADOS_PERMITIDOS:
+            extra.append("AND d.estado = %s")
+            params.append(estado)
+
+        try:
+            aid = int(args.get("area_id") or 0)
+            if aid:
+                extra.append("AND d.area_id = %s")
+                params.append(aid)
+        except (ValueError, TypeError):
+            pass
+
+        try:
+            rid = int(args.get("responsable_id") or 0)
+            if rid:
+                extra.append("AND d.usuario_asignado_id = %s")
+                params.append(rid)
+        except (ValueError, TypeError):
+            pass
+
+        try:
+            cid = int(args.get("categoria_id") or 0)
+            if cid:
+                extra.append("AND d.categoria_id = %s")
+                params.append(cid)
+        except (ValueError, TypeError):
+            pass
+
+        try:
+            sid = int(args.get("subcategoria_id") or 0)
+            if sid:
+                extra.append("AND d.subcategoria_id = %s")
+                params.append(sid)
+        except (ValueError, TypeError):
+            pass
+
+        tipo = (args.get("tipo_denunciante") or "").strip()
+        if tipo == "anonimo":
+            extra.append("AND d.es_anonima = 1")
+        elif tipo == "identificado":
+            extra.append("AND d.es_anonima = 0")
+
+        texto = (args.get("texto") or "").strip()
+        if texto:
+            extra.append("AND (d.descripcion LIKE %s OR d.codigo LIKE %s OR d.categoria LIKE %s)")
+            t = "%{}%".format(texto)
+            params.extend([t, t, t])
+
+        where = filt + (" " + " ".join(extra) if extra else "")
+        return where, params
 
     def sql_y_args_bandeja_denuncias(req_args, rol, uid, limit=800):
         """Misma lógica de filtros que la bandeja; devuelve (sql, args) para listar denuncias."""
@@ -2928,95 +3018,218 @@ def register_admin_routes(bp):
     @bp.route("/reportes")
     @login_required
     def admin_reportes():
-        rol = session["rol"]
-        uid = session["uid"]
-
-        filt, args = listar_where_base(rol, uid)
-
         conn = get_db()
-        totals = []
-
-        sql = """
-        SELECT estado, COUNT(*) AS c
-        FROM denuncias d
-        WHERE 1=1 {filt}
-        GROUP BY estado
-        ORDER BY c DESC
-        """.format(
-            filt=filt
-        )
-
         with conn.cursor() as cur:
-            cur.execute(sql, tuple(args))
-            totals = cur.fetchall()
-
-        datos_por_area = None
-        total_area = 0
-        datos_por_categoria = None
-        total_categoria = 0
-        datos_por_subcat = None
-        total_subcat = 0
-        if rol in ("AdministradorGlobal", "AdminCierre"):
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT a.nombre, COUNT(d.id) AS c
-                    FROM areas a
-                    LEFT JOIN denuncias d ON d.area_id = a.id AND d.activo = 1
-                    GROUP BY a.id, a.nombre
-                    ORDER BY c DESC, a.nombre
-                    """
-                )
-                datos_por_area = cur.fetchall()
-            for row in datos_por_area:
-                row["c"] = int(row["c"])
-            total_area = sum(r["c"] for r in datos_por_area)
-            for row in datos_por_area:
-                row["pct"] = round(row["c"] / total_area * 100, 1) if total_area > 0 else 0.0
-
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT cat.nombre, COUNT(d.id) AS c
-                    FROM categorias cat
-                    LEFT JOIN denuncias d ON d.categoria_id = cat.id AND d.activo = 1
-                    GROUP BY cat.id, cat.nombre
-                    ORDER BY c DESC, cat.nombre
-                    """
-                )
-                datos_por_categoria = cur.fetchall()
-            for row in datos_por_categoria:
-                row["c"] = int(row["c"])
-            total_categoria = sum(r["c"] for r in datos_por_categoria)
-            for row in datos_por_categoria:
-                row["pct"] = round(row["c"] / total_categoria * 100, 1) if total_categoria > 0 else 0.0
-
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT sub.nombre, COUNT(d.id) AS c
-                    FROM subcategorias sub
-                    LEFT JOIN denuncias d ON d.subcategoria_id = sub.id AND d.activo = 1
-                    GROUP BY sub.id, sub.nombre
-                    ORDER BY c DESC, sub.nombre
-                    """
-                )
-                datos_por_subcat = cur.fetchall()
-            for row in datos_por_subcat:
-                row["c"] = int(row["c"])
-            total_subcat = sum(r["c"] for r in datos_por_subcat)
-            for row in datos_por_subcat:
-                row["pct"] = round(row["c"] / total_subcat * 100, 1) if total_subcat > 0 else 0.0
-
+            cur.execute("SELECT id, nombre FROM areas WHERE activo=1 ORDER BY nombre")
+            areas_meta = cur.fetchall()
+            cur.execute("SELECT id, nombres AS nombre FROM usuarios WHERE activo=1 ORDER BY nombres")
+            responsables_meta = cur.fetchall()
+            cur.execute("SELECT id, nombre FROM categorias WHERE activo=1 ORDER BY nombre")
+            categorias_meta = cur.fetchall()
+            cur.execute("""
+                SELECT s.id, s.nombre, s.categoria_id
+                FROM subcategorias s
+                WHERE s.activo=1
+                ORDER BY s.nombre
+            """)
+            subcategorias_meta = cur.fetchall()
         return render_template(
             "admin/reportes.html",
-            tabla=totals,
-            datos_por_area=datos_por_area,
-            total_area=total_area,
-            datos_por_categoria=datos_por_categoria,
-            total_categoria=total_categoria,
-            datos_por_subcat=datos_por_subcat,
-            total_subcat=total_subcat,
+            estados_meta=ESTADOS_PERMITIDOS,
+            areas_meta=areas_meta,
+            responsables_meta=responsables_meta,
+            categorias_meta=categorias_meta,
+            subcategorias_meta=subcategorias_meta,
+            agrupaciones={k: v[1] for k, v in _AGRUPACIONES_REPORTES.items()},
+            metricas={k: v[1] for k, v in _METRICAS_REPORTES.items()},
+        )
+
+    @bp.route("/reportes/api/kpis")
+    @login_required
+    def admin_reportes_api_kpis():
+        rol = obtener_rol()
+        uid = session["uid"]
+        conn = get_db()
+        where, params = _where_reportes(rol, uid, request.args)
+
+        def _i(v):
+            try:
+                return int(v or 0)
+            except Exception:
+                return 0
+
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN d.estado NOT IN ('Cerrada','Solucionada') THEN 1 ELSE 0 END) AS abiertas,
+                    SUM(CASE WHEN d.estado IN ('Cerrada','Solucionada') THEN 1 ELSE 0 END) AS cerradas,
+                    SUM(CASE WHEN d.estado = 'En atención' THEN 1 ELSE 0 END) AS en_atencion,
+                    SUM(CASE WHEN d.estado = 'Solucionada' THEN 1 ELSE 0 END) AS solucionadas,
+                    SUM(CASE WHEN d.estado = 'Asignada' THEN 1 ELSE 0 END) AS asignadas,
+                    SUM(CASE WHEN d.estado = 'Cerrada' THEN 1 ELSE 0 END) AS cerradas_formales
+                FROM denuncias d
+                LEFT JOIN usuarios u ON u.id = d.usuario_asignado_id
+                LEFT JOIN areas ar ON ar.id = d.area_id
+                WHERE 1=1 {w}
+            """.format(w=where), tuple(params))
+            k = cur.fetchone() or {}
+
+            cur.execute("""
+                SELECT COALESCE(ar.nombre,'Sin área') AS nombre, COUNT(*) AS c
+                FROM denuncias d
+                LEFT JOIN areas ar ON ar.id = d.area_id
+                WHERE 1=1 {w}
+                GROUP BY ar.id ORDER BY c DESC LIMIT 1
+            """.format(w=where), tuple(params))
+            top_area = cur.fetchone()
+
+            cur.execute("""
+                SELECT d.categoria AS nombre, COUNT(*) AS c
+                FROM denuncias d
+                LEFT JOIN areas ar ON ar.id = d.area_id
+                WHERE 1=1 {w}
+                GROUP BY d.categoria ORDER BY c DESC LIMIT 1
+            """.format(w=where), tuple(params))
+            top_cat = cur.fetchone()
+
+        return jsonify({
+            "total":             _i(k.get("total")),
+            "abiertas":          _i(k.get("abiertas")),
+            "cerradas":          _i(k.get("cerradas")),
+            "en_atencion":       _i(k.get("en_atencion")),
+            "solucionadas":      _i(k.get("solucionadas")),
+            "asignadas":         _i(k.get("asignadas")),
+            "cerradas_formales": _i(k.get("cerradas_formales")),
+            "top_area":          (top_area or {}).get("nombre") or "—",
+            "top_categoria":     (top_cat or {}).get("nombre") or "—",
+        })
+
+    @bp.route("/reportes/api/grafico")
+    @login_required
+    def admin_reportes_api_grafico():
+        rol = obtener_rol()
+        uid = session["uid"]
+        conn = get_db()
+
+        agrupar = (request.args.get("agrupar_por") or "estado").strip()
+        metrica = (request.args.get("metrica") or "cantidad").strip()
+        if agrupar not in _AGRUPACIONES_REPORTES or metrica not in _METRICAS_REPORTES:
+            return jsonify({"error": "Parámetro inválido"}), 400
+
+        where, params = _where_reportes(rol, uid, request.args)
+        gexpr, glabel = _AGRUPACIONES_REPORTES[agrupar]
+        mexpr, mlabel = _METRICAS_REPORTES[metrica]
+
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT ({g}) AS etiqueta, ({m}) AS valor
+                FROM denuncias d
+                LEFT JOIN usuarios u ON u.id = d.usuario_asignado_id
+                LEFT JOIN areas ar ON ar.id = d.area_id
+                WHERE 1=1 {w}
+                GROUP BY ({g})
+                ORDER BY valor DESC
+                LIMIT 50
+            """.format(g=gexpr, m=mexpr, w=where), tuple(params))
+            rows = cur.fetchall()
+
+        return jsonify({
+            "labels":        [str(r.get("etiqueta") or "—") for r in rows],
+            "values":        [int(r.get("valor") or 0) for r in rows],
+            "grupo_label":   glabel,
+            "metrica_label": mlabel,
+        })
+
+    @bp.route("/reportes/api/tabla")
+    @login_required
+    def admin_reportes_api_tabla():
+        rol = obtener_rol()
+        uid = session["uid"]
+        conn = get_db()
+
+        agrupar = (request.args.get("agrupar_por") or "estado").strip()
+        metrica = (request.args.get("metrica") or "cantidad").strip()
+        if agrupar not in _AGRUPACIONES_REPORTES or metrica not in _METRICAS_REPORTES:
+            return jsonify({"error": "Parámetro inválido"}), 400
+
+        where, params = _where_reportes(rol, uid, request.args)
+        gexpr, glabel = _AGRUPACIONES_REPORTES[agrupar]
+        mexpr, mlabel = _METRICAS_REPORTES[metrica]
+
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT ({g}) AS etiqueta, ({m}) AS valor
+                FROM denuncias d
+                LEFT JOIN usuarios u ON u.id = d.usuario_asignado_id
+                LEFT JOIN areas ar ON ar.id = d.area_id
+                WHERE 1=1 {w}
+                GROUP BY ({g})
+                ORDER BY valor DESC
+            """.format(g=gexpr, m=mexpr, w=where), tuple(params))
+            rows = cur.fetchall()
+
+        total = sum(int(r.get("valor") or 0) for r in rows)
+        filas = [
+            {
+                "etiqueta": str(r.get("etiqueta") or "—"),
+                "valor":    int(r.get("valor") or 0),
+                "pct":      round(int(r.get("valor") or 0) / total * 100, 1) if total > 0 else 0.0,
+            }
+            for r in rows
+        ]
+        return jsonify({
+            "col_grupo":   glabel,
+            "col_metrica": mlabel,
+            "filas":       filas,
+            "total":       total,
+        })
+
+    @bp.route("/reportes/api/export/csv")
+    @login_required
+    def admin_reportes_export_csv():
+        import csv, io
+        rol = obtener_rol()
+        uid = session["uid"]
+        conn = get_db()
+
+        agrupar = (request.args.get("agrupar_por") or "estado").strip()
+        metrica = (request.args.get("metrica") or "cantidad").strip()
+        if agrupar not in _AGRUPACIONES_REPORTES or metrica not in _METRICAS_REPORTES:
+            abort(400)
+
+        where, params = _where_reportes(rol, uid, request.args)
+        gexpr, glabel = _AGRUPACIONES_REPORTES[agrupar]
+        mexpr, mlabel = _METRICAS_REPORTES[metrica]
+
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT ({g}) AS etiqueta, ({m}) AS valor
+                FROM denuncias d
+                LEFT JOIN usuarios u ON u.id = d.usuario_asignado_id
+                LEFT JOIN areas ar ON ar.id = d.area_id
+                WHERE 1=1 {w}
+                GROUP BY ({g})
+                ORDER BY valor DESC
+            """.format(g=gexpr, m=mexpr, w=where), tuple(params))
+            rows = cur.fetchall()
+
+        total = sum(int(r.get("valor") or 0) for r in rows)
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow([glabel, mlabel, "%"])
+        for r in rows:
+            v = int(r.get("valor") or 0)
+            writer.writerow([
+                r.get("etiqueta") or "—",
+                v,
+                round(v / total * 100, 1) if total > 0 else 0.0,
+            ])
+        stamp = now_local().strftime("%Y%m%d_%H%M")
+        return Response(
+            buf.getvalue().encode("utf-8-sig"),
+            mimetype="text/csv",
+            headers={"Content-Disposition": 'attachment; filename="reporte_mmq_{}.csv"'.format(stamp)},
         )
 
     @bp.route("/reportes/excel")

@@ -1,353 +1,447 @@
 {% extends "base_admin.html" %}
 {% block title %}Reportes · MMQEP{% endblock %}
-{% block page_heading %}Reportes ejecutivos{% endblock %}
+{% block page_heading %}Panel de reportes{% endblock %}
+
 {% block body %}
+<style>
+/* ── KPI grid ── */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.9rem;margin-bottom:1.4rem;}
+.kpi-card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:1rem 1.1rem;display:flex;flex-direction:column;gap:.25rem;}
+.kpi-card .kpi-val{font-size:2rem;font-weight:700;color:#003366;line-height:1.1;}
+.kpi-card .kpi-lbl{font-size:.78rem;color:#64748b;font-weight:500;text-transform:uppercase;letter-spacing:.04em;}
+.kpi-card .kpi-sub{font-size:.8rem;color:#475569;margin-top:.15rem;}
+.kpi-card.accent-green{border-left:4px solid #16a34a;}.kpi-card.accent-green .kpi-val{color:#16a34a;}
+.kpi-card.accent-red  {border-left:4px solid #dc2626;}.kpi-card.accent-red   .kpi-val{color:#dc2626;}
+.kpi-card.accent-blue {border-left:4px solid #2563eb;}.kpi-card.accent-blue  .kpi-val{color:#2563eb;}
+.kpi-card.accent-amber{border-left:4px solid #d97706;}.kpi-card.accent-amber .kpi-val{color:#d97706;}
+.kpi-card.accent-muted{border-left:4px solid #94a3b8;}.kpi-card.accent-muted .kpi-val{color:#475569;font-size:1.05rem;}
+/* ── filter panel ── */
+.filter-panel{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:1rem 1.2rem;margin-bottom:1.4rem;}
+.filter-panel summary{cursor:pointer;font-weight:600;font-size:.92rem;color:#003366;user-select:none;}
+.filter-panel summary::marker{color:#003366;}
+.filter-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.7rem;margin-top:.9rem;}
+.filter-grid label{display:flex;flex-direction:column;font-size:.78rem;color:#475569;font-weight:500;gap:.25rem;}
+.filter-grid select,.filter-grid input{border:1px solid #cbd5e1;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;background:#fff;color:#1e293b;}
+.filter-actions{display:flex;gap:.6rem;margin-top:.9rem;align-items:center;flex-wrap:wrap;}
+/* ── builder bar ── */
+.builder-bar{display:flex;gap:.7rem;flex-wrap:wrap;align-items:center;margin-bottom:.9rem;}
+.builder-bar label{display:flex;align-items:center;gap:.4rem;font-size:.82rem;color:#475569;font-weight:500;}
+.builder-bar select{border:1px solid #cbd5e1;border-radius:6px;padding:.35rem .55rem;font-size:.82rem;background:#fff;color:#1e293b;}
+/* ── chart container ── */
+.chart-wrap{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:1.1rem 1.3rem;margin-bottom:1.2rem;}
+.chart-wrap h3{margin:0 0 .8rem;font-size:.92rem;color:#003366;font-weight:600;}
+.chart-canvas-box{position:relative;width:100%;max-height:360px;}
+/* ── dynamic table ── */
+.dyn-table-wrap{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:1.1rem 1.3rem;margin-bottom:1.2rem;}
+.dyn-table-wrap h3{margin:0 0 .8rem;font-size:.92rem;color:#003366;font-weight:600;}
+/* ── export bar ── */
+.export-bar{display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:1.5rem;align-items:center;}
+.export-bar .bar-label{font-size:.8rem;color:#64748b;margin-right:.2rem;}
+/* ── spinner ── */
+.rpt-spinner{display:none;width:20px;height:20px;border:3px solid #e2e8f0;border-top-color:#003366;border-radius:50%;animation:spin .7s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.loading .rpt-spinner{display:inline-block;}
+/* ── misc ── */
+.section-divider{border:none;border-top:1px solid #e2e8f0;margin:1.4rem 0;}
+.excel-links{display:flex;gap:.6rem;flex-wrap:wrap;}
+</style>
 
-<div class="report-actions">
-  <a class="btn btn-primary btn-large" href="{{ url_for('admin_denuncias.excel_report') }}">Exportar Excel (bandeja)</a>
-  <a class="btn btn-outline btn-large" href="{{ url_for('admin_denuncias.excel_report_seguimiento') }}">Exportar Excel (con seguimiento)</a>
+{# ── FILTER PANEL ── #}
+<details class="filter-panel" id="filter-panel" open>
+  <summary>Filtros de análisis</summary>
+  <div class="filter-grid">
+    <label>Fecha desde
+      <input type="date" id="f-desde" name="fecha_desde">
+    </label>
+    <label>Fecha hasta
+      <input type="date" id="f-hasta" name="fecha_hasta">
+    </label>
+    <label>Estado
+      <select id="f-estado">
+        <option value="">Todos los estados</option>
+        <option value="__abiertas__">Todos los abiertos</option>
+        <option value="__cerradas__">Todos los cerrados</option>
+        {% for e in estados_meta %}
+        <option value="{{ e }}">{{ e }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Área
+      <select id="f-area">
+        <option value="">Todas las áreas</option>
+        {% for a in areas_meta %}
+        <option value="{{ a.id }}">{{ a.nombre }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Responsable
+      <select id="f-responsable">
+        <option value="">Todos</option>
+        {% for u in responsables_meta %}
+        <option value="{{ u.id }}">{{ u.nombre }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Categoría
+      <select id="f-categoria">
+        <option value="">Todas</option>
+        {% for c in categorias_meta %}
+        <option value="{{ c.id }}">{{ c.nombre }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Subcategoría
+      <select id="f-subcategoria">
+        <option value="">Todas</option>
+        {% for s in subcategorias_meta %}
+        <option value="{{ s.id }}" data-cat="{{ s.categoria_id }}">{{ s.nombre }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Tipo denunciante
+      <select id="f-tipo-denunciante">
+        <option value="">Todos</option>
+        <option value="identificado">Identificado</option>
+        <option value="anonimo">Anónimo</option>
+      </select>
+    </label>
+    <label style="grid-column:1/-1;">Búsqueda (texto libre)
+      <input type="text" id="f-texto" placeholder="Código, categoría, descripción…" style="max-width:400px;">
+    </label>
+  </div>
+  <div class="filter-actions">
+    <button class="btn btn-primary" id="btn-aplicar">Aplicar filtros</button>
+    <button class="btn btn-outline" id="btn-limpiar">Limpiar</button>
+    <span class="rpt-spinner" id="spinner"></span>
+  </div>
+</details>
+
+{# ── KPI CARDS ── #}
+<div class="kpi-grid" id="kpi-grid">
+  <div class="kpi-card"><span class="kpi-val" id="kpi-total">—</span><span class="kpi-lbl">Total expedientes</span></div>
+  <div class="kpi-card accent-red"><span class="kpi-val" id="kpi-abiertas">—</span><span class="kpi-lbl">Abiertos</span></div>
+  <div class="kpi-card accent-green"><span class="kpi-val" id="kpi-cerradas">—</span><span class="kpi-lbl">Cerrados</span></div>
+  <div class="kpi-card accent-blue"><span class="kpi-val" id="kpi-en-atencion">—</span><span class="kpi-lbl">En atención</span></div>
+  <div class="kpi-card accent-green"><span class="kpi-val" id="kpi-solucionadas">—</span><span class="kpi-lbl">Solucionadas</span></div>
+  <div class="kpi-card accent-amber"><span class="kpi-val" id="kpi-asignadas">—</span><span class="kpi-lbl">Asignadas</span></div>
+  <div class="kpi-card accent-muted"><span class="kpi-val" id="kpi-top-area">—</span><span class="kpi-lbl">Área con más casos</span></div>
+  <div class="kpi-card accent-muted"><span class="kpi-val" id="kpi-top-cat">—</span><span class="kpi-lbl">Categoría más frecuente</span></div>
 </div>
-<p class="hint-inline" style="margin-bottom:1.25rem;">
-  <strong>Bandeja:</strong> una fila por expediente — código, categoría, estado, responsable y fechas.<br>
-  <strong>Con seguimiento:</strong> una fila por cada entrada del historial — incluye acción, usuario, estado anterior/nuevo y observación.
-</p>
 
-<div class="card table-card spacing-top">
-  <h2 class="card-title">Cantidad por estado</h2>
+<hr class="section-divider">
+
+{# ── BUILDER BAR ── #}
+<div class="builder-bar">
+  <strong style="font-size:.88rem;color:#003366;">Analizar por:</strong>
+  <label>Agrupar
+    <select id="b-agrupar">
+      {% for key, lbl in agrupaciones.items() %}
+      <option value="{{ key }}" {% if key=='estado' %}selected{% endif %}>{{ lbl }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Métrica
+    <select id="b-metrica">
+      {% for key, lbl in metricas.items() %}
+      <option value="{{ key }}" {% if key=='cantidad' %}selected{% endif %}>{{ lbl }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Tipo gráfico
+    <select id="b-tipo-grafico">
+      <option value="bar">Barras</option>
+      <option value="pie">Pastel</option>
+      <option value="doughnut">Rosca</option>
+      <option value="line">Línea</option>
+    </select>
+  </label>
+</div>
+
+{# ── CHART ── #}
+<div class="chart-wrap">
+  <h3 id="chart-titulo">Gráfico</h3>
+  <div class="chart-canvas-box">
+    <canvas id="main-chart"></canvas>
+  </div>
+  <p id="chart-empty" class="muted" style="display:none;margin:.5rem 0 0;">Sin datos para los filtros seleccionados.</p>
+</div>
+
+{# ── DYNAMIC TABLE ── #}
+<div class="dyn-table-wrap">
+  <h3 id="tabla-titulo">Tabla de distribución</h3>
   <div class="table-wrap">
     <table class="data-table striped">
       <thead>
         <tr>
-          <th>Estado</th>
-          <th>Cantidad</th>
+          <th id="th-grupo">Grupo</th>
+          <th id="th-metrica" style="text-align:right;">Valor</th>
+          <th style="text-align:right;">%</th>
         </tr>
       </thead>
-      <tbody>
-        {% for row in tabla %}
-        <tr>
-          <td>{{ row.estado }}</td>
-          <td>{{ row.c }}</td>
-        </tr>
-        {% else %}
-        <tr><td colspan="2" class="muted">Sin datos.</td></tr>
-        {% endfor %}
+      <tbody id="tabla-body">
+        <tr><td colspan="3" class="muted">Cargando…</td></tr>
       </tbody>
+      <tfoot>
+        <tr style="font-weight:600;background:#f8fafc;">
+          <td>Total</td>
+          <td id="tabla-total" style="text-align:right;">—</td>
+          <td style="text-align:right;">100%</td>
+        </tr>
+      </tfoot>
     </table>
   </div>
+  <p id="tabla-empty" class="muted" style="display:none;margin:.5rem 0 0;">Sin datos para los filtros seleccionados.</p>
 </div>
 
-{% if datos_por_area is not none %}
-
-<div class="card spacing-top">
-  <h2 class="card-title">Distribución de denuncias por área responsable</h2>
-  {% if datos_por_area %}
-  <p class="muted" style="margin-top:0;margin-bottom:1.25rem;">
-    Total de denuncias activas: <strong style="color:var(--text-main);">{{ total_area }}</strong>
-  </p>
-  <div style="display:flex;gap:2rem;flex-wrap:wrap;align-items:flex-start;">
-    <div style="flex:0 0 auto;width:280px;max-width:100%;">
-      <canvas id="chart-por-area" width="280" height="280"></canvas>
-    </div>
-    <div style="flex:1;min-width:240px;" class="table-wrap">
-      <table class="data-table striped">
-        <thead>
-          <tr>
-            <th style="width:24px;"></th>
-            <th>Área</th>
-            <th style="text-align:right;">Denuncias</th>
-            <th style="text-align:right;">%</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in datos_por_area %}
-          <tr>
-            <td>
-              <span id="area-dot-{{ loop.index0 }}"
-                    style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#e2e8f0;vertical-align:middle;">
-              </span>
-            </td>
-            <td>{{ row.nombre }}</td>
-            <td style="text-align:right;">{{ row.c }}</td>
-            <td style="text-align:right;">{{ row.pct }}%</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+{# ── EXPORT BAR ── #}
+<div class="export-bar">
+  <span class="bar-label">Exportar vista actual:</span>
+  <a class="btn btn-outline" id="btn-export-csv">CSV</a>
+  <span style="border-left:1px solid #e2e8f0;margin:0 .2rem;"></span>
+  <span class="bar-label" style="margin-left:.2rem;">Exportar bandeja completa:</span>
+  <div class="excel-links">
+    <a class="btn btn-outline" href="{{ url_for('admin_denuncias.excel_report') }}">Excel (bandeja)</a>
+    <a class="btn btn-outline" href="{{ url_for('admin_denuncias.excel_report_seguimiento') }}">Excel (con seguimiento)</a>
   </div>
-  {% else %}
-  <p class="muted">No hay áreas registradas.</p>
-  {% endif %}
 </div>
-
-<div class="card spacing-top">
-  <h2 class="card-title">Distribución de denuncias por categoría</h2>
-  {% if datos_por_categoria %}
-  <p class="muted" style="margin-top:0;margin-bottom:1.25rem;">
-    Total de denuncias activas: <strong style="color:var(--text-main);">{{ total_categoria }}</strong>
-  </p>
-  <div style="display:flex;gap:2rem;flex-wrap:wrap;align-items:flex-start;">
-    <div style="flex:0 0 auto;width:280px;max-width:100%;">
-      <canvas id="chart-por-categoria" width="280" height="280"></canvas>
-    </div>
-    <div style="flex:1;min-width:240px;" class="table-wrap">
-      <table class="data-table striped">
-        <thead>
-          <tr>
-            <th style="width:24px;"></th>
-            <th>Categoría</th>
-            <th style="text-align:right;">Denuncias</th>
-            <th style="text-align:right;">%</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in datos_por_categoria %}
-          <tr>
-            <td>
-              <span id="cat-dot-{{ loop.index0 }}"
-                    style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#e2e8f0;vertical-align:middle;">
-              </span>
-            </td>
-            <td>{{ row.nombre }}</td>
-            <td style="text-align:right;">{{ row.c }}</td>
-            <td style="text-align:right;">{{ row.pct }}%</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-  {% else %}
-  <p class="muted">No hay categorías registradas.</p>
-  {% endif %}
-</div>
-
-<div class="card spacing-top">
-  <h2 class="card-title">Distribución de denuncias por subcategoría</h2>
-  {% if datos_por_subcat %}
-  <p class="muted" style="margin-top:0;margin-bottom:1.25rem;">
-    Total de denuncias activas: <strong style="color:var(--text-main);">{{ total_subcat }}</strong>
-  </p>
-  <div style="display:flex;gap:2rem;flex-wrap:wrap;align-items:flex-start;">
-    <div style="flex:0 0 auto;width:280px;max-width:100%;">
-      <canvas id="chart-por-subcat" width="280" height="280"></canvas>
-    </div>
-    <div style="flex:1;min-width:240px;" class="table-wrap">
-      <table class="data-table striped">
-        <thead>
-          <tr>
-            <th style="width:24px;"></th>
-            <th>Subcategoría</th>
-            <th style="text-align:right;">Denuncias</th>
-            <th style="text-align:right;">%</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in datos_por_subcat %}
-          <tr>
-            <td>
-              <span id="sub-dot-{{ loop.index0 }}"
-                    style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#e2e8f0;vertical-align:middle;">
-              </span>
-            </td>
-            <td>{{ row.nombre }}</td>
-            <td style="text-align:right;">{{ row.c }}</td>
-            <td style="text-align:right;">{{ row.pct }}%</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-  {% else %}
-  <p class="muted">No hay subcategorías registradas.</p>
-  {% endif %}
-</div>
-
-{% endif %}
 
 {% endblock %}
 
 {% block scripts %}
-{% if datos_por_area or datos_por_categoria or datos_por_subcat %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-{% endif %}
-
-{% if datos_por_area %}
 <script>
 (function () {
+  'use strict';
+
+  var API_KPIS    = "{{ url_for('admin_denuncias.admin_reportes_api_kpis') }}";
+  var API_GRAFICO = "{{ url_for('admin_denuncias.admin_reportes_api_grafico') }}";
+  var API_TABLA   = "{{ url_for('admin_denuncias.admin_reportes_api_tabla') }}";
+  var API_CSV     = "{{ url_for('admin_denuncias.admin_reportes_export_csv') }}";
+
   var PALETTE = [
-    '#003366','#2980b9','#16a085','#27ae60','#f39c12',
-    '#8e44ad','#c0392b','#d35400','#1a6ea8','#2c3e50',
-    '#7f8c8d','#1abc9c','#e74c3c','#9b59b6','#2ecc71'
+    '#003366','#2563eb','#16a34a','#d97706','#dc2626',
+    '#7c3aed','#0891b2','#b45309','#15803d','#9333ea',
+    '#0369a1','#c2410c','#4f46e5','#047857','#b91c1c',
+    '#6d28d9','#0e7490','#92400e','#065f46','#7e22ce'
   ];
 
-  var datos = {{ datos_por_area | tojson }};
-  var total = {{ total_area }};
+  var chartInstance = null;
 
-  var chartItems = datos.filter(function (r) { return r.c > 0; });
-  var labels = chartItems.map(function (r) { return r.nombre; });
-  var values = chartItems.map(function (r) { return r.c; });
-  var bgColors = chartItems.map(function (_, i) { return PALETTE[i % PALETTE.length]; });
-
-  var colorMap = {};
-  chartItems.forEach(function (r, i) {
-    colorMap[r.nombre] = PALETTE[i % PALETTE.length];
-  });
-  datos.forEach(function (r, i) {
-    var el = document.getElementById('area-dot-' + i);
-    if (el) el.style.background = colorMap[r.nombre] || '#e2e8f0';
+  /* ── subcategoría cascada ── */
+  var selCat = document.getElementById('f-categoria');
+  var selSub = document.getElementById('f-subcategoria');
+  var allSubOpts = Array.from(selSub.options).map(function(o){
+    return {val:o.value, txt:o.textContent, cat:o.dataset.cat||''};
   });
 
-  if (chartItems.length > 0) {
-    var ctx = document.getElementById('chart-por-area').getContext('2d');
-    new Chart(ctx, {
-      type: 'pie',
-      data: {
-        labels: labels,
-        datasets: [{
-          data: values,
-          backgroundColor: bgColors,
-          borderColor: '#ffffff',
-          borderWidth: 2
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              label: function (ctx) {
-                var pct = total > 0 ? (ctx.parsed / total * 100).toFixed(1) : '0.0';
-                return ctx.label + ': ' + ctx.parsed + ' (' + pct + '%)';
-              }
-            }
-          }
-        }
+  function filtrarSubcats() {
+    var catId = selCat.value;
+    var current = selSub.value;
+    selSub.innerHTML = '<option value="">Todas</option>';
+    allSubOpts.forEach(function(o){
+      if(!o.val) return;
+      if(!catId || o.cat === catId){
+        var opt = document.createElement('option');
+        opt.value = o.val; opt.textContent = o.txt; opt.dataset.cat = o.cat;
+        if(o.val === current) opt.selected = true;
+        selSub.appendChild(opt);
       }
     });
   }
-})();
-</script>
-{% endif %}
+  selCat.addEventListener('change', filtrarSubcats);
 
-{% if datos_por_categoria %}
-<script>
-(function () {
-  var PALETTE = [
-    '#003366','#2980b9','#16a085','#27ae60','#f39c12',
-    '#8e44ad','#c0392b','#d35400','#1a6ea8','#2c3e50',
-    '#7f8c8d','#1abc9c','#e74c3c','#9b59b6','#2ecc71'
-  ];
+  /* ── leer filtros ── */
+  function getFilters(extra) {
+    var p = new URLSearchParams();
+    var v;
+    v = document.getElementById('f-desde').value;   if(v) p.set('fecha_desde', v);
+    v = document.getElementById('f-hasta').value;   if(v) p.set('fecha_hasta', v);
+    v = document.getElementById('f-estado').value;  if(v) p.set('estado', v);
+    v = document.getElementById('f-area').value;    if(v) p.set('area_id', v);
+    v = document.getElementById('f-responsable').value; if(v) p.set('responsable_id', v);
+    v = document.getElementById('f-categoria').value;   if(v) p.set('categoria_id', v);
+    v = document.getElementById('f-subcategoria').value; if(v) p.set('subcategoria_id', v);
+    v = document.getElementById('f-tipo-denunciante').value; if(v) p.set('tipo_denunciante', v);
+    v = document.getElementById('f-texto').value.trim(); if(v) p.set('texto', v);
+    if(extra) Object.keys(extra).forEach(function(k){ p.set(k, extra[k]); });
+    return p;
+  }
 
-  var datos = {{ datos_por_categoria | tojson }};
-  var total = {{ total_categoria }};
+  function builderParams() {
+    return {
+      agrupar_por: document.getElementById('b-agrupar').value,
+      metrica:     document.getElementById('b-metrica').value
+    };
+  }
 
-  var chartItems = datos.filter(function (r) { return r.c > 0; });
-  var labels = chartItems.map(function (r) { return r.nombre; });
-  var values = chartItems.map(function (r) { return r.c; });
-  var bgColors = chartItems.map(function (_, i) { return PALETTE[i % PALETTE.length]; });
+  /* ── spinner ── */
+  var spinner = document.getElementById('spinner');
+  var pending = 0;
+  function loading(on){
+    pending += on ? 1 : -1;
+    if(pending < 0) pending = 0;
+    spinner.parentElement.classList.toggle('loading', pending > 0);
+  }
 
-  var colorMap = {};
-  chartItems.forEach(function (r, i) {
-    colorMap[r.nombre] = PALETTE[i % PALETTE.length];
-  });
-  datos.forEach(function (r, i) {
-    var el = document.getElementById('cat-dot-' + i);
-    if (el) el.style.background = colorMap[r.nombre] || '#e2e8f0';
-  });
+  /* ── fetch helper ── */
+  function apiFetch(url, params) {
+    loading(true);
+    return fetch(url + '?' + params.toString())
+      .then(function(r){ return r.json(); })
+      .catch(function(){ return null; })
+      .finally(function(){ loading(false); });
+  }
 
-  if (chartItems.length > 0) {
-    var ctx = document.getElementById('chart-por-categoria').getContext('2d');
-    new Chart(ctx, {
-      type: 'pie',
-      data: {
-        labels: labels,
-        datasets: [{
-          data: values,
-          backgroundColor: bgColors,
-          borderColor: '#ffffff',
-          borderWidth: 2
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              label: function (ctx) {
-                var pct = total > 0 ? (ctx.parsed / total * 100).toFixed(1) : '0.0';
-                return ctx.label + ': ' + ctx.parsed + ' (' + pct + '%)';
-              }
-            }
-          }
-        }
-      }
+  /* ── KPIs ── */
+  function cargarKpis() {
+    var p = getFilters();
+    apiFetch(API_KPIS, p).then(function(d){
+      if(!d) return;
+      document.getElementById('kpi-total').textContent      = d.total;
+      document.getElementById('kpi-abiertas').textContent   = d.abiertas;
+      document.getElementById('kpi-cerradas').textContent   = d.cerradas;
+      document.getElementById('kpi-en-atencion').textContent= d.en_atencion;
+      document.getElementById('kpi-solucionadas').textContent= d.solucionadas;
+      document.getElementById('kpi-asignadas').textContent  = d.asignadas;
+      document.getElementById('kpi-top-area').textContent   = d.top_area || '—';
+      document.getElementById('kpi-top-cat').textContent    = d.top_categoria || '—';
     });
   }
-})();
-</script>
-{% endif %}
 
-{% if datos_por_subcat %}
-<script>
-(function () {
-  var PALETTE = [
-    '#003366','#2980b9','#16a085','#27ae60','#f39c12',
-    '#8e44ad','#c0392b','#d35400','#1a6ea8','#2c3e50',
-    '#7f8c8d','#1abc9c','#e74c3c','#9b59b6','#2ecc71'
-  ];
+  /* ── Gráfico ── */
+  function cargarGrafico() {
+    var bp = builderParams();
+    var p  = getFilters(bp);
+    var tipo = document.getElementById('b-tipo-grafico').value;
 
-  var datos = {{ datos_por_subcat | tojson }};
-  var total = {{ total_subcat }};
+    apiFetch(API_GRAFICO, p).then(function(d){
+      if(!d || !d.labels) return;
+      var empty = !d.labels.length;
+      document.getElementById('chart-empty').style.display = empty ? '' : 'none';
 
-  var chartItems = datos.filter(function (r) { return r.c > 0; });
-  var labels = chartItems.map(function (r) { return r.nombre; });
-  var values = chartItems.map(function (r) { return r.c; });
-  var bgColors = chartItems.map(function (_, i) { return PALETTE[i % PALETTE.length]; });
+      var titulo = d.grupo_label + ' · ' + d.metrica_label;
+      document.getElementById('chart-titulo').textContent = titulo;
 
-  var colorMap = {};
-  chartItems.forEach(function (r, i) {
-    colorMap[r.nombre] = PALETTE[i % PALETTE.length];
-  });
-  datos.forEach(function (r, i) {
-    var el = document.getElementById('sub-dot-' + i);
-    if (el) el.style.background = colorMap[r.nombre] || '#e2e8f0';
-  });
+      var ctx = document.getElementById('main-chart').getContext('2d');
+      if(chartInstance){ chartInstance.destroy(); chartInstance = null; }
+      if(empty) return;
 
-  if (chartItems.length > 0) {
-    var ctx = document.getElementById('chart-por-subcat').getContext('2d');
-    new Chart(ctx, {
-      type: 'pie',
-      data: {
-        labels: labels,
-        datasets: [{
-          data: values,
-          backgroundColor: bgColors,
-          borderColor: '#ffffff',
-          borderWidth: 2
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              label: function (ctx) {
-                var pct = total > 0 ? (ctx.parsed / total * 100).toFixed(1) : '0.0';
-                return ctx.label + ': ' + ctx.parsed + ' (' + pct + '%)';
+      var isPie = (tipo === 'pie' || tipo === 'doughnut');
+      var bgColors = d.labels.map(function(_,i){ return PALETTE[i % PALETTE.length]; });
+
+      chartInstance = new Chart(ctx, {
+        type: tipo,
+        data: {
+          labels: d.labels,
+          datasets: [{
+            label: d.metrica_label,
+            data: d.values,
+            backgroundColor: isPie ? bgColors : PALETTE[0],
+            borderColor: isPie ? '#fff' : PALETTE[0],
+            borderWidth: isPie ? 2 : 1,
+            borderRadius: tipo === 'bar' ? 4 : 0,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: { display: isPie, position: 'right' },
+            tooltip: {
+              callbacks: {
+                label: function(ctx){
+                  var val = ctx.parsed.y !== undefined ? ctx.parsed.y : ctx.parsed;
+                  var total = d.values.reduce(function(a,b){return a+b;},0);
+                  var pct = total > 0 ? (val/total*100).toFixed(1) : '0.0';
+                  return ' ' + val + ' (' + pct + '%)';
+                }
               }
             }
+          },
+          scales: isPie ? {} : {
+            y: { beginAtZero: true, ticks: { precision: 0 } }
           }
         }
-      }
+      });
     });
   }
+
+  /* ── Tabla ── */
+  function cargarTabla() {
+    var bp = builderParams();
+    var p  = getFilters(bp);
+
+    apiFetch(API_TABLA, p).then(function(d){
+      if(!d || !d.filas) return;
+
+      document.getElementById('th-grupo').textContent   = d.col_grupo;
+      document.getElementById('th-metrica').textContent = d.col_metrica;
+      document.getElementById('tabla-titulo').textContent = d.col_grupo + ' · ' + d.col_metrica;
+
+      var tbody = document.getElementById('tabla-body');
+      var empty = !d.filas.length;
+      document.getElementById('tabla-empty').style.display = empty ? '' : 'none';
+
+      if(empty){
+        tbody.innerHTML = '<tr><td colspan="3" class="muted">Sin datos.</td></tr>';
+        document.getElementById('tabla-total').textContent = '—';
+        return;
+      }
+
+      var html = '';
+      d.filas.forEach(function(r){
+        html += '<tr><td>' + escHtml(r.etiqueta) + '</td>'
+              + '<td style="text-align:right;">' + r.valor + '</td>'
+              + '<td style="text-align:right;">' + r.pct + '%</td></tr>';
+      });
+      tbody.innerHTML = html;
+      document.getElementById('tabla-total').textContent = d.total;
+    });
+  }
+
+  /* ── CSV export ── */
+  document.getElementById('btn-export-csv').addEventListener('click', function(){
+    var bp = builderParams();
+    var p  = getFilters(bp);
+    window.location.href = API_CSV + '?' + p.toString();
+  });
+
+  /* ── helpers ── */
+  function escHtml(s){
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  /* ── actualizar todo ── */
+  function actualizarTodo(){
+    cargarKpis();
+    cargarGrafico();
+    cargarTabla();
+  }
+
+  /* ── eventos ── */
+  document.getElementById('btn-aplicar').addEventListener('click', actualizarTodo);
+
+  document.getElementById('btn-limpiar').addEventListener('click', function(){
+    ['f-desde','f-hasta','f-texto'].forEach(function(id){
+      document.getElementById(id).value = '';
+    });
+    ['f-estado','f-area','f-responsable','f-categoria','f-tipo-denunciante'].forEach(function(id){
+      document.getElementById(id).selectedIndex = 0;
+    });
+    filtrarSubcats();
+    actualizarTodo();
+  });
+
+  ['b-agrupar','b-metrica','b-tipo-grafico'].forEach(function(id){
+    document.getElementById(id).addEventListener('change', function(){
+      cargarGrafico();
+      cargarTabla();
+    });
+  });
+
+  /* ── carga inicial ── */
+  actualizarTodo();
+
 })();
 </script>
-{% endif %}
-
 {% endblock %}
